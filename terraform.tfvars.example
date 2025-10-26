@@ -1,0 +1,21 @@
+# このファイルをコピーして terraform.tfvars を作成し、
+# 実際の値を設定してください
+
+# Cloudflare
+cloudflare_api_token = "your_cloudflare_api_token_here"
+
+# Proxmox
+proxmox_token_id     = "terraform@pve!terraform"
+proxmox_token_secret = "your_proxmox_api_secret_here"
+
+# デフォルトのProxmoxノード
+proxmox_node = "aduki"
+
+# 公開するサービス
+# services = {
+#   "app1" = {
+#     subdomain   = "app"
+#     local_url   = "http://192.168.0.100:3000"
+#     description = "My Application"
+#   }
+# }
