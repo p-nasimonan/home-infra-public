@@ -1,82 +1,190 @@
 # ==========================================
-# Proxmox VMs and LXC Containers
+# VM/LXC コンテナ定義
+# ==========================================
+# このファイルでProxmox上のVM/LXCコンテナを管理します
+# サービスの公開設定は terraform.tfvars で行います
+
+# ==========================================
+# Infrastructure LXC (常時稼働)
 # ==========================================
 
-# 例: LXCコンテナの作成
-# resource "proxmox_lxc" "terraform_runner" {
-#   target_node  = var.proxmox_node
-#   hostname     = "terraform"
-#   ostemplate   = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
-#   password     = "your_password_here"  # または ssh_public_keys を使用
+# Terraform & Cloudflared Runner
+resource "proxmox_virtual_environment_container" "terraform_runner" {
+  description  = "Terraform and Cloudflared runner"
+  node_name    = "anko"
+  unprivileged = true
+  
+  initialization {
+    hostname = "infra-runner"
+    
+    user_account {
+      password = "Terraform2024!"
+    }
+    
+    ip_config {
+      ipv4 {
+        address = "dhcp"
+      }
+    }
+  }
+  
+  operating_system {
+    template_file_id = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+    type             = "ubuntu"
+  }
+  
+  cpu {
+    cores = 2
+  }
+  
+  memory {
+    dedicated = 4096
+  }
+  
+  disk {
+    datastore_id = "local-lvm"
+    size         = 16
+  }
+  
+  network_interface {
+    name   = "eth0"
+    bridge = "vmbr0"
+  }
+  
+  started       = true
+  start_on_boot = true
+  
+  features {
+    nesting = true
+  }
+  
+  tags = ["terraform", "cloudflared", "infra", "managed"]
+}
+
+# ==========================================
+# Application LXC (サービスごと)
+# ==========================================
+# 新しいサービスを追加する場合は、以下のテンプレートをコピーして使用してください
+
+# 例: Nextcloud LXC (コメントアウト - 必要に応じて有効化)
+# resource "proxmox_virtual_environment_container" "nextcloud" {
+#   description  = "Nextcloud file sharing service"
+#   node_name    = "anko"
 #   unprivileged = true
 #   
-#   # リソース設定
-#   cores  = 2
-#   memory = 2048
-#   swap   = 512
+#   initialization {
+#     hostname = "nextcloud"
+#     
+#     user_account {
+#       password = "changeme"  # 本番環境では必ず変更
+#     }
+#     
+#     ip_config {
+#       ipv4 {
+#         address = "192.168.0.101/24"
+#         gateway = "192.168.0.1"
+#       }
+#     }
+#   }
 #   
-#   # ネットワーク設定
-#   network {
+#   operating_system {
+#     template_file_id = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+#     type             = "ubuntu"
+#   }
+#   
+#   cpu {
+#     cores = 2
+#   }
+#   
+#   memory {
+#     dedicated = 2048
+#   }
+#   
+#   disk {
+#     datastore_id = "local-lvm"
+#     size         = 16
+#   }
+#   
+#   network_interface {
 #     name   = "eth0"
 #     bridge = "vmbr0"
-#     ip     = "dhcp"
-#     ip6    = "auto"
 #   }
 #   
-#   # ストレージ設定
-#   rootfs {
-#     storage = "local-lvm"
-#     size    = "8G"
-#   }
+#   started       = true
+#   start_on_boot = true
 #   
-#   # 自動起動設定
-#   onboot = true
-#   start  = true
-#   
-#   # タグ
-#   tags = "terraform,managed"
+#   tags = ["nextcloud", "web", "managed"]
 # }
 
-# 例: VM(仮想マシン)の作成
-# resource "proxmox_vm_qemu" "example_vm" {
-#   name        = "example-vm"
-#   target_node = var.proxmox_node
-#   clone       = "ubuntu-cloud-template"  # 事前に作成したテンプレート
+# 例: Home Assistant LXC (コメントアウト - 必要に応じて有効化)
+# resource "proxmox_virtual_environment_container" "homeassistant" {
+#   description  = "Home Assistant smart home platform"
+#   node_name    = "anko"
+#   unprivileged = true
 #   
-#   # リソース設定
-#   cores   = 2
-#   sockets = 1
-#   memory  = 4096
-#   
-#   # ディスク設定
-#   disk {
-#     size    = "32G"
-#     type    = "scsi"
-#     storage = "local-lvm"
+#   initialization {
+#     hostname = "homeassistant"
+#     
+#     user_account {
+#       password = "changeme"
+#     }
+#     
+#     ip_config {
+#       ipv4 {
+#         address = "192.168.0.102/24"
+#         gateway = "192.168.0.1"
+#       }
+#     }
 #   }
 #   
-#   # ネットワーク設定
-#   network {
-#     model  = "virtio"
+#   operating_system {
+#     template_file_id = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+#     type             = "ubuntu"
+#   }
+#   
+#   cpu {
+#     cores = 2
+#   }
+#   
+#   memory {
+#     dedicated = 2048
+#   }
+#   
+#   disk {
+#     datastore_id = "local-lvm"
+#     size         = 16
+#   }
+#   
+#   network_interface {
+#     name   = "eth0"
 #     bridge = "vmbr0"
 #   }
 #   
-#   # Cloud-init設定
-#   os_type   = "cloud-init"
-#   ipconfig0 = "ip=dhcp"
+#   started       = true
+#   start_on_boot = true
 #   
-#   # SSH設定
-#   # sshkeys = file("~/.ssh/id_rsa.pub")
-#   
-#   # 自動起動
-#   onboot = true
-#   
-#   # タグ
-#   tags = "terraform,managed"
+#   tags = ["homeassistant", "smart-home", "managed"]
 # }
 
-# データソース: 既存のVM/LXCの情報を取得
-# data "proxmox_vm_qemu" "existing_vm" {
-#   vmid = 100
-#   target_node = var.proxmox_node
-# }
+# ==========================================
+# 使い方
+# ==========================================
+# 1. 上記のテンプレートをコピーしてリソース名を変更
+# 2. IPアドレスを割り当て（例: 192.168.0.10x）
+# 3. terraform apply -target=proxmox_virtual_environment_container.<name>
+# 4. SSH接続してサービスをインストール
+# 5. terraform.tfvars の services{} に追加して公開
+
+# ==========================================
+# Outputs
+# ==========================================
+
+# Terraform Runner の情報を出力
+output "terraform_runner_info" {
+  description = "Terraform Runner LXC の情報"
+  value = {
+    vm_id    = proxmox_virtual_environment_container.terraform_runner.vm_id
+    hostname = "infra-runner"
+    node     = proxmox_virtual_environment_container.terraform_runner.node_name
+  }
+}
