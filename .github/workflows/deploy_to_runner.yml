@@ -1,0 +1,94 @@
+name: Deploy Terraform on infra-runner
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**.tf'
+      - 'terraform.tfvars.example'
+      - '.github/workflows/deploy_to_runner.yml'
+  workflow_dispatch:
+    inputs:
+      terraform_action:
+        description: 'Terraform action to run'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+jobs:
+  terraform:
+    name: Terraform on self-hosted runner
+    runs-on: [self-hosted, Linux, X64]
+    
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create terraform.tfvars from secrets
+        run: |
+          cat > terraform.tfvars <<EOF
+          cloudflare_api_token = "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          
+          proxmox_token_id = "${{ secrets.PROXMOX_TOKEN_ID }}"
+          proxmox_token_secret = "${{ secrets.PROXMOX_TOKEN_SECRET }}"
+          
+          # Services configuration
+          services = {
+            proxmox = {
+              subdomain   = "pve"
+              local_url   = "https://192.168.0.13:8006"
+              description = "Proxmox VE Console"
+            }
+          }
+          EOF
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -out=tfplan
+        continue-on-error: false
+
+      - name: Terraform Apply (on push or manual apply)
+        if: |
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'apply')
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy (manual only)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'destroy'
+        run: terraform destroy -auto-approve
+
+      - name: Cleanup terraform.tfvars
+        if: always()
+        run: rm -f terraform.tfvars tfplan
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Terraform Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Action: ${{ github.event.inputs.terraform_action || 'auto-apply' }}" >> $GITHUB_STEP_SUMMARY

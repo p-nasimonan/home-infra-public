@@ -40,46 +40,16 @@ apt-get install -y terraform
 
 # Cloudflared のインストール
 echo "[4/6] Cloudflared をインストール中..."
-wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-dpkg -i cloudflared-linux-amd64.deb
-rm cloudflared-linux-amd64.deb
+# Add cloudflare gpg key
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
 
-# Git リポジトリをクローン（オプション）
-echo "[5/6] 作業ディレクトリを準備中..."
-mkdir -p /root/infrastructure
-cd /root/infrastructure
+# Add this repo to your apt repositories
+echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
 
-# バージョン確認
-echo "[6/6] インストール確認..."
-echo ""
-echo "✅ Terraform バージョン:"
-terraform version
-echo ""
-echo "✅ Cloudflared バージョン:"
-cloudflared --version
-echo ""
-echo "✅ Git バージョン:"
-git --version
+# install cloudflared
+sudo apt-get update && sudo apt-get install cloudflared
 
-echo ""
-echo "=================================="
-echo "✅ セットアップ完了！"
-echo "=================================="
-echo ""
-echo "次のステップ:"
-echo "1. Git リポジトリをクローン:"
-echo "   cd /root/infrastructure"
-echo "   git clone https://github.com/p-nasimonan/home-infra.git"
-echo "   cd home-infra"
-echo ""
-echo "2. Terraform 初期化:"
-echo "   terraform init"
-echo ""
-echo "3. Cloudflared Tunnel を起動:"
-echo "   cloudflared tunnel run --token <YOUR_TUNNEL_TOKEN>"
-echo ""
-echo "4. または、systemd サービスとして登録:"
-echo "   cloudflared service install <YOUR_TUNNEL_TOKEN>"
-echo "   systemctl start cloudflared"
-echo "   systemctl enable cloudflared"
-echo ""
+
+# github runnerのインストール
+# Create a folder
