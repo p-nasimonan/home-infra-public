@@ -70,10 +70,8 @@ jobs:
         run: terraform plan -out=tfplan
         continue-on-error: false
 
-      - name: Terraform Apply (on push or manual apply)
-        if: |
-          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'apply')
+      - name: Terraform Apply (manual only)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'apply'
         run: terraform apply -auto-approve tfplan
 
       - name: Terraform Destroy (manual only)

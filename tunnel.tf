@@ -26,6 +26,11 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "main" {
       content {
         hostname = "${ingress_rule.value.subdomain}.${var.domain}"
         service  = ingress_rule.value.local_url
+        
+        # 自己署名証明書対応（Proxmox等）
+        origin_request {
+          no_tls_verify = true
+        }
       }
     }
 
