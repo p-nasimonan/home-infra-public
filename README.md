@@ -45,20 +45,24 @@ terraform init
 
 ```
 home-infra/
-├── .env                    # 環境変数(Git管理外)
-├── .env.example            # 環境変数のテンプレート
 ├── .gitignore
 ├── README.md
+├── QUICKSTART.md           # クイックスタートガイド
+├── AUTOEXPOSE.md           # サービス自動公開ガイド
+├── DEPLOYMENT.md           # デプロイメント完了ガイド
 ├── providers.tf            # Terraformプロバイダー設定
 ├── variables.tf            # 変数定義
 ├── terraform.tfvars        # 変数値(Git管理外)
-├── cloudflare/            # Cloudflare関連
-│   ├── tunnel.tf          # Cloudflare Tunnel設定
-│   ├── dns.tf             # DNS設定
-│   └── outputs.tf         # 出力値
-└── proxmox/               # Proxmox関連
-    ├── network.tf         # ネットワーク設定
-    ├── vms.tf             # VM/LXC設定
+├── terraform.tfvars.example # 変数値のテンプレート
+├── outputs.tf              # 出力値
+├── tunnel.tf               # Cloudflare Tunnel設定
+├── dns.tf                  # DNS設定
+├── services.tf             # サービス自動公開設定
+├── vms.tf                  # Proxmox VM/LXC設定
+├── network.tf              # Proxmoxネットワーク設定
+├── auto_expose.tf          # 自動公開パターン
+└── example_services.tf     # サービス例
+```
     └── outputs.tf         # 出力値
 ```
 
