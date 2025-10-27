@@ -32,28 +32,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create terraform.tfvars from secrets
-        run: |
-          cat > terraform.tfvars <<EOF
-          cloudflare_api_token = "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          
-          proxmox_token_id = "${{ secrets.PROXMOX_TOKEN_ID }}"
-          proxmox_token_secret = "${{ secrets.PROXMOX_TOKEN_SECRET }}"
-          
-          # Services configuration
-          services = {
-            proxmox = {
-              subdomain   = "pve"
-              local_url   = "https://192.168.0.13:8006"
-              description = "Proxmox VE Console"
-            }
-          }
-          EOF
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: latest
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
       - name: Terraform Init
         run: terraform init
@@ -67,20 +50,16 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -out=tfplan
+        run: terraform plan
         continue-on-error: false
 
       - name: Terraform Apply (manual only)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'apply'
-        run: terraform apply -auto-approve tfplan
+        run: terraform apply -auto-approve
 
       - name: Terraform Destroy (manual only)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'destroy'
         run: terraform destroy -auto-approve
-
-      - name: Cleanup terraform.tfvars
-        if: always()
-        run: rm -f terraform.tfvars tfplan
 
       - name: Summary
         if: always()

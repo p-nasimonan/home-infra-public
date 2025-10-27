@@ -1,6 +1,15 @@
 terraform {
   required_version = ">= 1.0"
   
+  # Terraform Cloud バックエンド
+  cloud {
+    organization = "p-nasi"
+    
+    workspaces {
+      name = "home-infra"
+    }
+  }
+  
   required_providers {
     cloudflare = {
       source  = "cloudflare/cloudflare"
