@@ -27,6 +27,11 @@ jobs:
     defaults:
       run:
         working-directory: ${{ github.workspace }}
+    
+    env:
+      TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TF_VAR_proxmox_token_id: ${{ secrets.PROXMOX_TOKEN_ID }}
+      TF_VAR_proxmox_token_secret: ${{ secrets.PROXMOX_TOKEN_SECRET }}
 
     steps:
       - name: Checkout repository
