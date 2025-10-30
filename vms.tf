@@ -34,11 +34,11 @@ resource "proxmox_virtual_environment_container" "terraform_runner" {
   }
   
   cpu {
-    cores = 2
+    cores = 1
   }
   
   memory {
-    dedicated = 4096
+    dedicated = 2048
   }
   
   disk {
