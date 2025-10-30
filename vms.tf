@@ -176,6 +176,76 @@ resource "proxmox_virtual_environment_container" "terraform_runner" {
 # 5. terraform.tfvars の services{} に追加して公開
 
 # ==========================================
+# Virtual Machines
+# ==========================================
+
+# Coolify PaaS Platform
+resource "proxmox_virtual_environment_vm" "coolify" {
+  name        = "coolify"
+  description = "Coolify - Self-hosted PaaS platform"
+  node_name   = "monaka"
+  
+  agent {
+    enabled = true
+  }
+  
+  cpu {
+    cores = 2
+    type  = "host"
+  }
+  
+  memory {
+    dedicated = 4096
+  }
+  
+  disk {
+    datastore_id = "local-lvm"
+    file_id      = "local:iso/ubuntu-22.04.5-live-server-amd64.iso"
+    interface    = "virtio0"
+    size         = 32
+  }
+  
+  network_device {
+    bridge = "vmbr0"
+  }
+  
+  initialization {
+    datastore_id = "local-lvm"
+    
+    ip_config {
+      ipv4 {
+        address = "dhcp"
+      }
+    }
+    
+    user_account {
+      username = "ubuntu"
+      password = "Coolify2024!"
+      keys     = []
+    }
+    
+    user_data_file_id = proxmox_virtual_environment_file.coolify_cloud_init.id
+  }
+  
+  started       = true
+  on_boot       = true
+  
+  tags = ["coolify", "paas", "docker", "managed"]
+}
+
+# Cloud-init設定ファイル
+resource "proxmox_virtual_environment_file" "coolify_cloud_init" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "monaka"
+  
+  source_raw {
+    data = file("${path.module}/cloud-init/coolify-init.yaml")
+    file_name = "coolify-init.yaml"
+  }
+}
+
+# ==========================================
 # Outputs
 # ==========================================
 
@@ -186,5 +256,16 @@ output "terraform_runner_info" {
     vm_id    = proxmox_virtual_environment_container.terraform_runner.vm_id
     hostname = "infra-runner"
     node     = proxmox_virtual_environment_container.terraform_runner.node_name
+  }
+}
+
+# Coolify VM の情報を出力
+output "coolify_info" {
+  description = "Coolify VM の情報"
+  value = {
+    vm_id    = proxmox_virtual_environment_vm.coolify.vm_id
+    name     = proxmox_virtual_environment_vm.coolify.name
+    node     = proxmox_virtual_environment_vm.coolify.node_name
+    ipv4     = try(proxmox_virtual_environment_vm.coolify.ipv4_addresses[1][0], "DHCP assigned")
   }
 }

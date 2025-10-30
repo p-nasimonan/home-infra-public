@@ -1,0 +1,43 @@
+#cloud-config
+# Coolify初期セットアップ用のcloud-init設定
+
+# パッケージのアップデートを実行
+package_update: true
+package_upgrade: true
+
+# 必要なパッケージをインストール
+packages:
+  - curl
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - ufw
+
+# ファイアウォール設定
+runcmd:
+  # UFWのセットアップ
+  - ufw --force enable
+  - ufw allow 22/tcp   # SSH
+  - ufw allow 80/tcp   # HTTP
+  - ufw allow 443/tcp  # HTTPS
+  - ufw reload
+  
+  # Coolifyのインストール（バックグラウンドで実行）
+  - curl -fsSL https://get.coolify.io | bash
+  
+  # インストール完了の確認用ファイルを作成
+  - echo "Coolify installation initiated at $(date)" > /var/log/coolify-install.log
+
+# タイムゾーン設定
+timezone: Asia/Tokyo
+
+# SSHの設定を強化
+ssh_pwauth: false
+disable_root: false
+
+# 完了時のメッセージ
+final_message: |
+  Coolify installation has been initiated.
+  Please wait a few minutes for the installation to complete.
+  You can check the status with: docker ps
+  Access Coolify at: http://<this-vm-ip>:8000
