@@ -11,17 +11,9 @@ packages:
   - ca-certificates
   - gnupg
   - lsb-release
-  - ufw
 
-# ファイアウォール設定
+# Coolifyのインストール
 runcmd:
-  # UFWのセットアップ
-  - ufw --force enable
-  - ufw allow 22/tcp   # SSH
-  - ufw allow 80/tcp   # HTTP
-  - ufw allow 443/tcp  # HTTPS
-  - ufw reload
-  
   # Coolifyのインストール（バックグラウンドで実行）
   - curl -fsSL https://get.coolify.io | bash
   
@@ -31,8 +23,8 @@ runcmd:
 # タイムゾーン設定
 timezone: Asia/Tokyo
 
-# SSHの設定を強化
-ssh_pwauth: false
+# SSHの設定
+ssh_pwauth: true
 disable_root: false
 
 # 完了時のメッセージ
@@ -40,4 +32,7 @@ final_message: |
   Coolify installation has been initiated.
   Please wait a few minutes for the installation to complete.
   You can check the status with: docker ps
-  Access Coolify at: http://<this-vm-ip>:8000
+  
+  Access Coolify dashboard:
+  - Internal: http://<this-vm-ip>:8000
+  - Via Cloudflare Tunnel: Add to services variable in variables.tf
