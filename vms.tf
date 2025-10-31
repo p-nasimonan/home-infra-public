@@ -198,12 +198,17 @@ resource "proxmox_virtual_environment_vm" "coolify" {
     dedicated = 4096
   }
   
-  # ディスク設定（新規作成）
+  # クラウドイメージからディスクをクローン
   disk {
     datastore_id = "local-lvm"
     interface    = "scsi0"
     size         = 32
     file_format  = "raw"
+  }
+  
+  # CD-ROM（クラウドイメージ、cloud-init用）
+  cdrom {
+    file_id = "local:iso/ubuntu-22.04-cloudimg.img"
   }
   
   network_device {
@@ -224,6 +229,9 @@ resource "proxmox_virtual_environment_vm" "coolify" {
       password = "Coolify2024!"
       keys     = []
     }
+    
+    # cloud-init設定ファイルを参照（Proxmox snippets に配置済み）
+    user_data_file_id = "local:snippets/coolify-init.yaml"
   }
   
   started       = true

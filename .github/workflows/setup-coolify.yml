@@ -70,6 +70,32 @@ jobs:
           EOF
 
       # =============================================
+      # 4.5. cloud-init 設定ファイルを Proxmox に配置
+      # =============================================
+      - name: cloud-init ファイルを Proxmox に配置
+        if: ${{ github.event.inputs.action == 'setup' }}
+        run: |
+          ssh -i ~/.ssh/proxmox_key root@${{ env.MONAKA_HOST }} << 'EOF'
+          set -e
+          mkdir -p /var/lib/vz/snippets
+          
+          # cloud-init ファイルを作成
+          cat > /var/lib/vz/snippets/coolify-init.yaml << 'CLOUDINIT'
+          #cloud-config
+          package_update: true
+          packages:
+            - openssh-server
+            - qemu-guest-agent
+          ssh_pwauth: true
+          disable_root: false
+          CLOUDINIT
+          
+          chmod 644 /var/lib/vz/snippets/coolify-init.yaml
+          echo "✓ cloud-init ファイルを配置しました"
+          ls -lh /var/lib/vz/snippets/coolify-init.yaml
+          EOF
+
+      # =============================================
       # 5. Terraform Plan（確認）
       # =============================================
       - name: Terraform Plan
