@@ -224,26 +224,14 @@ resource "proxmox_virtual_environment_vm" "coolify" {
       keys     = []
     }
     
-    # cloud-init設定を直接指定（NoCloud方式）
-    user_data = templatefile("${path.module}/cloud-init/coolify-init.yaml", {})
+    # cloud-init設定ファイルを参照（事前にProxmoxに配置）
+    user_data_file_id = "local:snippets/coolify-init.yaml"
   }
   
   started       = true
   on_boot       = true
   
   tags = ["coolify", "paas", "docker", "managed"]
-}
-
-# Cloud-init設定ファイル
-resource "proxmox_virtual_environment_file" "coolify_cloud_init" {
-  content_type = "snippets"
-  datastore_id = "local-lvm"
-  node_name    = "monaka"
-  
-  source_raw {
-    data      = file("${path.module}/cloud-init/coolify-init.yaml")
-    file_name = "coolify-init.yaml"
-  }
 }
 
 # ==========================================
