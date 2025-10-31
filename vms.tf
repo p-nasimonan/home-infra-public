@@ -198,11 +198,13 @@ resource "proxmox_virtual_environment_vm" "coolify" {
     dedicated = 4096
   }
   
+  # クラウドイメージからディスクをクローン
   disk {
     datastore_id = "local-lvm"
-    file_id      = "local:iso/ubuntu-22.04.5-live-server-amd64.iso"
-    interface    = "virtio0"
+    interface    = "scsi0"
+    file_id      = "local:iso/ubuntu-22.04-cloudimg.img"
     size         = 32
+    file_format  = "raw"
   }
   
   network_device {

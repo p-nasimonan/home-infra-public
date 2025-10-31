@@ -1,0 +1,8 @@
+[coolify]
+# Terraform により自動生成（terraform apply で更新されます）
+coolify-vm ansible_host=${coolify_ip} ansible_user=ubuntu ansible_password=Coolify2024!
+
+[coolify:vars]
+ansible_connection=ssh
+ansible_port=22
+ansible_python_interpreter=/usr/bin/python3
