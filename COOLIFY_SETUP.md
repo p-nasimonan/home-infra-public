@@ -1,14 +1,12 @@
 # Coolify VM セットアップ手順
 
-Terraform + cloud-init + Ansible を使用したCoolify自動デプロイメント
+Terraform + Ansible を使用したCoolify自動デプロイメント
 
 ## 前提条件
 
 - Ansible がローカルマシンにインストール済み
   ```bash
   brew install ansible
-  # または
-  pip3 install ansible
   ```
 
 ---
@@ -19,7 +17,7 @@ Proxmoxノード（monaka）にSSH接続して、Ubuntuクラウドイメージ�
 
 ```bash
 # Proxmox monaka nodeにSSH接続
-ssh root@<monaka-ip-address>
+ssh root@monaka.youkan.uk
 
 # ディレクトリ作成
 mkdir -p /var/lib/vz/template/iso
@@ -109,7 +107,7 @@ coolify-vm | SUCCESS => {
 
 ## Step 5: Ansible で Coolify をインストール
 
-cloud-init が最小限の初期化を完了してから、Ansible で Docker と Coolify をインストールします。
+Ansible Playbook で Docker と Coolify を自動インストールします。
 
 ```bash
 cd /Users/e245719/Documents/GitHub/home-infra/ansible
@@ -141,7 +139,6 @@ docker ps -a  # 全コンテナ表示
 ### Coolify のログを確認
 
 ```bash
-cat /var/log/coolify-install.log
 docker logs $(docker ps | grep coolify | awk '{print $1}') 2>&1 | head -50
 ```
 
@@ -171,14 +168,6 @@ ssh -v ubuntu@192.168.0.30
 sudo ufw status
 ```
 
-### cloud-init のログを確認
-
-```bash
-ssh ubuntu@192.168.0.30
-cat /var/log/cloud-init-complete.log
-cat /var/log/cloud-init.log
-```
-
 ### Docker が起動していない
 
 ```bash
@@ -202,12 +191,13 @@ docker logs $(docker ps -aq)
 ```
 .
 ├── vms.tf                              # VM定義
-├── cloud-init/
-│   └── coolify-init.yaml              # cloud-init設定（最小限）
 ├── ansible/
 │   ├── inventory.ini                  # ホスト定義
+│   ├── inventory.tpl                  # ホスト定義テンプレート
 │   ├── playbook-coolify.yml           # Coolify インストール Playbook
 │   └── README.md                      # Ansible 詳細ドキュメント
+├── .github/workflows/
+│   └── setup-coolify.yml              # GitHub Actions ワークフロー
 └── COOLIFY_SETUP.md                   # このファイル
 ```
 
@@ -227,3 +217,20 @@ docker logs $(docker ps -aq)
 3. **定期メンテナンス**
    - Ansible Playbook で周期的に更新実行
    - Docker コンテナのメンテナンス
+
+---
+
+## GitHub Actions で全自動化（オプション）
+
+`.github/workflows/setup-coolify.yml` ワークフロー で以下が自動実行されます：
+
+1. クラウドイメージをProxmoxにダウンロード
+2. Terraform で VM を作成
+3. Ansible で Coolify をインストール
+4. インストール完了通知
+
+実行方法：
+
+```
+GitHub → Actions → Coolify セットアップ自動化 → Run workflow
+```
