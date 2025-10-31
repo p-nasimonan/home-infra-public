@@ -66,7 +66,12 @@ variable "services" {
     description = string
   }))
   default = {
-    # 例:
+    proxmox = {
+      subdomain   = "pve"
+      local_url   = "https://192.168.0.13:8006"
+      description = "Proxmox VE Console"
+    }
+    # 追加のサービス例:
     # "homeassistant" = {
     #   subdomain   = "home"
     #   local_url   = "http://192.168.0.100:8123"
