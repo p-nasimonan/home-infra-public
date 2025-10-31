@@ -224,25 +224,33 @@ resource "proxmox_virtual_environment_vm" "coolify" {
       keys     = []
     }
     
-    user_data_file_id = proxmox_virtual_environment_file.coolify_cloud_init.id
+    # cloud-init設定を直接埋め込み
+    user_data = <<-EOT
+      #cloud-config
+      package_update: true
+      package_upgrade: true
+      
+      packages:
+        - curl
+        - ca-certificates
+        - gnupg
+        - lsb-release
+      
+      runcmd:
+        - curl -fsSL https://get.coolify.io | bash
+        - echo "Coolify installation initiated at $(date)" > /var/log/coolify-install.log
+      
+      timezone: Asia/Tokyo
+      
+      ssh_pwauth: true
+      disable_root: false
+    EOT
   }
   
   started       = true
   on_boot       = true
   
   tags = ["coolify", "paas", "docker", "managed"]
-}
-
-# Cloud-init設定ファイル
-resource "proxmox_virtual_environment_file" "coolify_cloud_init" {
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = "monaka"
-  
-  source_raw {
-    data = file("${path.module}/cloud-init/coolify-init.yaml")
-    file_name = "coolify-init.yaml"
-  }
 }
 
 # ==========================================
