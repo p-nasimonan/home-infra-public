@@ -24,6 +24,17 @@ jobs:
         uses: actions/checkout@v4
 
       # =============================================
+      # 1.5. Terraform 環境変数を設定
+      # =============================================
+      - name: Terraform 環境変数を設定
+        if: ${{ github.event.inputs.action == 'setup' || github.event.inputs.action == 'destroy' }}
+        run: |
+          echo "TF_VAR_cloudflare_api_token=${{ secrets.CLOUDFLARE_API_TOKEN }}" >> $GITHUB_ENV
+          echo "TF_VAR_proxmox_token_id=${{ secrets.PROXMOX_TOKEN_ID }}" >> $GITHUB_ENV
+          echo "TF_VAR_proxmox_token_secret=${{ secrets.PROXMOX_TOKEN_SECRET }}" >> $GITHUB_ENV
+          echo "TF_API_TOKEN=${{ secrets.TF_API_TOKEN }}" >> $GITHUB_ENV
+
+      # =============================================
       # 2. Terraform 初期化と情報取得
       # =============================================
       - name: Terraform 初期化

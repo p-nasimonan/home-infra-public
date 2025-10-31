@@ -198,17 +198,12 @@ resource "proxmox_virtual_environment_vm" "coolify" {
     dedicated = 4096
   }
   
-  # クラウドイメージからディスクをクローン
+  # ディスク設定（新規作成）
   disk {
     datastore_id = "local-lvm"
     interface    = "scsi0"
     size         = 32
     file_format  = "raw"
-  }
-  
-  # CD-ROM（クラウドイメージ、cloud-init用）
-  cdrom {
-    file_id = "local:iso/ubuntu-22.04-cloudimg.img"
   }
   
   network_device {
