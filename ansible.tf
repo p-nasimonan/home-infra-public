@@ -33,9 +33,7 @@ output "coolify_vm_ip" {
 output "monaka_node_info" {
   description = "monaka node の情報"
   value = {
-    name    = data.proxmox_virtual_environment_node.monaka.name
-    status  = data.proxmox_virtual_environment_node.monaka.status
-    uptime  = data.proxmox_virtual_environment_node.monaka.uptime
+    node_name = data.proxmox_virtual_environment_node.monaka.node_name
   }
 }
 
