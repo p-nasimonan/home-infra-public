@@ -224,7 +224,8 @@ resource "proxmox_virtual_environment_vm" "coolify" {
       keys     = []
     }
     
-    user_data_file_id = proxmox_virtual_environment_file.coolify_cloud_init.id
+    # cloud-init設定を直接指定（NoCloud方式）
+    user_data = templatefile("${path.module}/cloud-init/coolify-init.yaml", {})
   }
   
   started       = true
