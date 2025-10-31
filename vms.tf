@@ -236,7 +236,7 @@ resource "proxmox_virtual_environment_vm" "coolify" {
 # Cloud-init設定ファイル
 resource "proxmox_virtual_environment_file" "coolify_cloud_init" {
   content_type = "snippets"
-  datastore_id = "local"
+  datastore_id = "local-lvm"
   node_name    = "monaka"
   
   source_raw {
