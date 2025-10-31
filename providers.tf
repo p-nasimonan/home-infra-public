@@ -35,7 +35,11 @@ provider "cloudflare" {
 
 # Proxmox Provider (bpg/proxmox for Proxmox VE 9.x support)
 provider "proxmox" {
-  endpoint = var.proxmox_api_url
+  endpoint  = var.proxmox_api_url
   api_token = "${var.proxmox_token_id}=${var.proxmox_token_secret}"
-  insecure = true
+  insecure  = true
+  
+  ssh {
+    agent = true
+  }
 }
