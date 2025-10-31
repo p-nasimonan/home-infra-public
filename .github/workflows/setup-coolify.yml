@@ -43,12 +43,12 @@ jobs:
           cd ${{ github.workspace }}
           terraform init
 
-      - name: monaka node ホスト名を設定
+      - name: monaka node IP を設定
         if: ${{ github.event.inputs.action == 'setup' }}
         run: |
-          # monaka.youkan.uk をホスト名で使用
-          echo "MONAKA_HOST=monaka.youkan.uk" >> $GITHUB_ENV
-          echo "monaka host: monaka.youkan.uk"
+          # monaka node の IP アドレス
+          echo "MONAKA_HOST=192.168.0.8" >> $GITHUB_ENV
+          echo "monaka IP: 192.168.0.8"
 
       # =============================================
       # 3. SSH キーを設定（Proxmox アクセス用）
