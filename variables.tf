@@ -51,7 +51,7 @@ variable "proxmox_token_secret" {
 variable "proxmox_node" {
   description = "Default Proxmox node to use"
   type        = string
-  default     = "aduki"  # または "monaka" または "anko"
+  default     = "aduki" # または "monaka" または "anko"
 }
 
 # ==========================================

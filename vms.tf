@@ -280,16 +280,20 @@ resource "proxmox_virtual_environment_vm" "coolify" {
     size         = 32
   }
 
+  # ネットワーク設定: 隔離ネットワーク (10.0.0.0/24) に接続
   network_device {
-    bridge = "vmbr0"
+    bridge = "vmbr1"
+    model  = "virtio"
   }
 
   initialization {
     datastore_id = "local-lvm"
 
+    # 固定IP割り当て: 10.0.0.10/24
     ip_config {
       ipv4 {
-        address = "dhcp"
+        address = "10.0.0.10/24"
+        gateway = "10.0.0.1"
       }
     }
 
@@ -330,6 +334,12 @@ output "coolify_info" {
     vm_id = proxmox_virtual_environment_vm.coolify.vm_id
     name  = proxmox_virtual_environment_vm.coolify.name
     node  = proxmox_virtual_environment_vm.coolify.node_name
-    ipv4  = try(proxmox_virtual_environment_vm.coolify.ipv4_addresses[1][0], "DHCP assigned")
+    ipv4  = "10.0.0.10/24"
   }
+}
+
+# Ansible インベントリ用の IP 出力
+output "coolify_ip" {
+  description = "Coolify VM の内部ネットワークIP"
+  value       = "10.0.0.10"
 }

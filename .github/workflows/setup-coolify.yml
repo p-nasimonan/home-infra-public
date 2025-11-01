@@ -125,19 +125,20 @@ jobs:
           terraform apply -target=proxmox_virtual_environment_vm.coolify -auto-approve
 
       # =============================================
-      # 7. VM の IP を取得
+      # 7. VM の IP を取得（固定IP: 10.0.0.10）
       # =============================================
       - name: VM の IP を取得
         if: ${{ github.event.inputs.action == 'setup' }}
         run: |
           cd ${{ github.workspace }}
-          COOLIFY_IP=$(terraform output -raw coolify_vm_ip 2>/dev/null || echo "waiting_for_ip")
+          # 固定IP（内部ネットワーク: 10.0.0.0/24）
+          COOLIFY_IP=$(terraform output -raw coolify_vm_ip 2>/dev/null || echo "10.0.0.10")
           echo "COOLIFY_IP=$COOLIFY_IP" >> $GITHUB_ENV
-          echo "VM の IP: $COOLIFY_IP"
+          echo "VM の IP: $COOLIFY_IP（内部ネットワーク: 10.0.0.0/24）"
           
           # Terraform state から VM 情報を確認
           echo "=== VM 情報 ==="
-          terraform state show proxmox_virtual_environment_vm.coolify 2>/dev/null | grep -E "vm_id|name|node_name|ipv4" || echo "VM 情報取得失敗"
+          terraform state show proxmox_virtual_environment_vm.coolify 2>/dev/null | grep -E "vm_id|name|node_name" || echo "VM 情報取得失敗"
 
       # =============================================
       # 7.5. Proxmox から VM 状態を確認
@@ -168,13 +169,33 @@ jobs:
         run: sleep 60
 
       # =============================================
-      # 9. SSH 接続テスト
+      # 8.5. NAT Gateway（10.0.0.1）への接続確認
       # =============================================
-      - name: SSH 接続テスト
+      - name: NAT Gateway への接続確認
         if: ${{ github.event.inputs.action == 'setup' }}
         run: |
+          echo "NAT Gateway (10.0.0.1) への接続確認..."
+          for i in {1..5}; do
+            if ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@192.168.0.254 "ip route" 2>/dev/null; then
+              echo "✓ NAT Gateway 接続成功"
+              break
+            else
+              echo "接続試行 $i/5 失敗、再試行..."
+              sleep 5
+            fi
+          done
+
+      # =============================================
+      # 9. SSH 接続テスト（Coolify VM）
+      # =============================================
+      - name: SSH 接続テスト（Coolify VM）
+        if: ${{ github.event.inputs.action == 'setup' }}
+        env:
+          COOLIFY_IP: "10.0.0.10"
+        run: |
+          echo "Coolify VM (${{ env.COOLIFY_IP }}) への SSH 接続テスト..."
           for i in {1..10}; do
-            if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ubuntu@${{ env.COOLIFY_IP }} "echo 'SSH OK'" 2>/dev/null; then
+            if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ubuntu@${{ env.COOLIFY_IP }} "uname -a" 2>/dev/null; then
               echo "✓ SSH 接続成功"
               exit 0
             else
@@ -182,7 +203,7 @@ jobs:
               sleep 10
             fi
           done
-          echo "✗ SSH 接続失敗"
+          echo "✗ SSH 接続失敗（内部ネットワークの接続性を確認してください）"
           exit 1
 
       # =============================================
@@ -220,6 +241,8 @@ jobs:
       # =============================================
       - name: Docker / Coolify ステータス確認
         if: ${{ github.event.inputs.action == 'setup' }}
+        env:
+          COOLIFY_IP: "10.0.0.10"
         run: |
           ssh -o StrictHostKeyChecking=no ubuntu@${{ env.COOLIFY_IP }} << 'EOF'
           echo "=== Docker バージョン ==="
@@ -247,6 +270,8 @@ jobs:
       # =============================================
       - name: セットアップ完了情報
         if: ${{ github.event.inputs.action == 'setup' }}
+        env:
+          COOLIFY_IP: "10.0.0.10"
         run: |
           echo "========================================="
           echo "✓ Coolify セットアップ完了"

@@ -33,3 +33,5 @@ tunnel_credentials.json
 
 # Logs
 *.log
+
+docs/

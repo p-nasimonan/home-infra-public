@@ -2,33 +2,46 @@
 # Proxmox Network Configuration
 # ==========================================
 
-# 注: Proxmoxのネットワーク設定はノードごとに管理されます
-# Terraformでは以下のような設定が可能です:
+# Isolated Network Bridge (10.0.0.0/24)
+# This network is isolated and only accessible from 192.168.1.0/24
+resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1" {
+  node_name = "anko"
+  name      = "vmbr1"
+  comment   = "Isolated network for services (10.0.0.0/24) - Managed by Terraform"
 
-# 例: ネットワークブリッジの設定
-# resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1" {
-#   node_name = var.proxmox_node
-#   name      = "vmbr1"
-#   comment   = "Additional bridge managed by Terraform"
-#   
-#   address   = "10.0.1.1/24"
-#   ports     = ["eth1"]
-# }
+  address   = "10.0.0.1/24"
+  autostart = true
+}
 
-# 例: VLANの設定
-# resource "proxmox_virtual_environment_network_linux_vlan" "vlan100" {
-#   node_name = var.proxmox_node
-#   name      = "vlan100"
-#   comment   = "VLAN 100 managed by Terraform"
-#   
-#   vlan      = 100
-#   interface = "vmbr0"
-# }
+# Firewall configuration for the isolated network
+# Note: Proxmox firewall rules need to be configured at multiple levels:
+# 1. Datacenter level
+# 2. Node level  
+# 3. VM/Container level
 
-# データソース: 既存のネットワークインターフェースの情報を取得
-# data "proxmox_virtual_environment_nodes" "all" {}
+# Create security group for isolated network access
+resource "proxmox_virtual_environment_cluster_firewall_security_group" "isolated_net_access" {
+  name    = "isolated-net-access"
+  comment = "Allow access to 10.0.0.0/24 from 192.168.1.0/24 only"
 
-# 注意:
-# - Telmate/proxmoxプロバイダーはネットワーク設定の管理機能が限定的です
-# - より高度なネットワーク設定が必要な場合は、Ansibleなどと組み合わせることを推奨します
-# - または、bpg/proxmoxプロバイダー(proxmox_virtual_environment)の使用も検討してください
+  rule {
+    type    = "in"
+    action  = "ACCEPT"
+    comment = "Allow from home network (192.168.1.0/24)"
+    source  = "192.168.1.0/24"
+    iface   = "net1"
+    log     = "info"
+  }
+
+  rule {
+    type    = "in"
+    action  = "DROP"
+    comment = "Drop all other traffic to isolated network"
+    log     = "info"
+  }
+}
+
+# Note: For complete isolation, you should also:
+# 1. Enable firewall at datacenter level
+# 2. Apply security group to VMs/containers on vmbr1
+# 3. Consider using iptables/nftables for additional filtering

@@ -2,10 +2,10 @@
 # Ansible Inventory 自動生成
 # ==========================================
 
-# Coolify VM のIPアドレスを取得
+# Coolify VM のIPアドレスを取得（固定IP）
 locals {
-  coolify_ip    = try(proxmox_virtual_environment_vm.coolify.ipv4_addresses[1][0], "waiting_for_ip")
-  monaka_node   = data.proxmox_virtual_environment_node.monaka
+  coolify_ip  = "10.0.0.10"  # 固定IP（10.0.0.0/24 内部ネットワーク）
+  monaka_node = data.proxmox_virtual_environment_node.monaka
 }
 
 # Ansible inventory ファイルを自動生成
@@ -22,11 +22,11 @@ resource "local_file" "ansible_inventory" {
 # 出力: Ansible 実行時に使用するコマンド
 output "ansible_command" {
   description = "Ansible Playbook 実行コマンド"
-  value       = local.coolify_ip != "waiting_for_ip" ? "cd ansible && ansible-playbook -i inventory.ini playbook-coolify.yml -v" : "VM が起動するまで待機してください"
+  value       = "cd ansible && ansible-playbook -i inventory.ini playbook-coolify.yml -v"
 }
 
 output "coolify_vm_ip" {
-  description = "Coolify VM のIPアドレス"
+  description = "Coolify VM のIPアドレス（内部ネットワーク 10.0.0.0/24）"
   value       = local.coolify_ip
 }
 
