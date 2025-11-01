@@ -20,7 +20,6 @@ resource "proxmox_virtual_environment_cluster_firewall_security_group" "isolated
     action  = "ACCEPT"
     comment = "Allow from home network (192.168.1.0/24)"
     source  = "192.168.1.0/24"
-    iface   = "net1"
     log     = "info"
   }
 
