@@ -27,6 +27,27 @@ locals {
   
   # Zone 作成フラグ（手動作成の場合は false）
   auto_create_zones = false
+  
+  # vmbr1 ブリッジ作成管理
+  # create = true: Terraform で作成
+  # create = false: 既存（スキップ）
+  nodes_with_vmbr1 = {
+    anko = {
+      create = true
+      node   = "anko"
+      description = "Automatically via Terraform"
+    }
+    aduki = {
+      create = true
+      node   = "aduki"
+      description = "Automatically via Terraform"
+    }
+    monaka = {
+      create = false
+      node   = "monaka"
+      description = "Pre-configured - Terraform does not manage"
+    }
+  }
 }
 
 # ==========================================
@@ -57,27 +78,13 @@ resource "null_resource" "create_services_zone" {
 # ネットワークブリッジ定義
 # ==========================================
 
-# anko ノードに vmbr1 を自動作成
-# aduki, monaka ノードにも vmbr1 を自動作成
-resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1_anko" {
+# vmbr1 ブリッジを複数ノードで管理
+# create=true のノードのみ作成、false は既存（スキップ）
+resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1" {
+  for_each = { for k, v in local.nodes_with_vmbr1 : k => v if v.create }
+  
   name       = "vmbr1"
-  node_name  = "anko"
-  address    = "10.0.0.1/24"
-  autostart  = true
-  comment    = "Isolated network for services (10.0.0.0/24) - Managed by Terraform"
-}
-
-resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1_monaka" {
-  name       = "vmbr1"
-  node_name  = "monaka"
-  address    = "10.0.0.1/24"
-  autostart  = true
-  comment    = "Isolated network for services (10.0.0.0/24) - Managed by Terraform"
-}
-
-resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1_aduki" {
-  name       = "vmbr1"
-  node_name  = "aduki"
+  node_name  = each.value.node
   address    = "10.0.0.1/24"
   autostart  = true
   comment    = "Isolated network for services (10.0.0.0/24) - Managed by Terraform"
@@ -113,25 +120,15 @@ output "nat_gateway_config" {
 }
 
 output "vmbr1_bridges" {
-  description = "vmbr1 ブリッジ管理状態"
+  description = "vmbr1 ブリッジ管理状態（create=true のノードのみ作成、false はスキップ）"
   value = {
-    anko = {
-      status      = "Terraform managed"
-      node        = "anko"
-      address     = proxmox_virtual_environment_network_linux_bridge.vmbr1_anko.address
-      created     = "Automatically via Terraform"
-    }
-    monaka = {
-      status      = "Terraform managed"
-      node        = "monaka"
-      address     = proxmox_virtual_environment_network_linux_bridge.vmbr1_monaka.address
-      created     = "Automatically via Terraform"
-    }
-    aduki = {
-      status      = "Terraform managed"
-      node        = "aduki"
-      address     = proxmox_virtual_environment_network_linux_bridge.vmbr1_aduki.address
-      created     = "Automatically via Terraform"
+    terraform_managed = {
+      for k, v in local.nodes_with_vmbr1 : k => {
+        status      = v.create ? "Terraform managed" : "Manual (skipped)"
+        node        = v.node
+        address     = "10.0.0.1/24"
+        created     = v.description
+      }
     }
   }
 }
