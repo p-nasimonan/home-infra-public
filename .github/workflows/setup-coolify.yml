@@ -131,9 +131,34 @@ jobs:
         if: ${{ github.event.inputs.action == 'setup' }}
         run: |
           cd ${{ github.workspace }}
-          COOLIFY_IP=$(terraform output -raw coolify_vm_ip)
+          COOLIFY_IP=$(terraform output -raw coolify_vm_ip 2>/dev/null || echo "waiting_for_ip")
           echo "COOLIFY_IP=$COOLIFY_IP" >> $GITHUB_ENV
           echo "VM の IP: $COOLIFY_IP"
+          
+          # Terraform state から VM 情報を確認
+          echo "=== VM 情報 ==="
+          terraform state show proxmox_virtual_environment_vm.coolify 2>/dev/null | grep -E "vm_id|name|node_name|ipv4" || echo "VM 情報取得失敗"
+
+      # =============================================
+      # 7.5. Proxmox から VM 状態を確認
+      # =============================================
+      - name: Proxmox 上の VM 状態を確認
+        if: ${{ github.event.inputs.action == 'setup' }}
+        run: |
+          ssh -i ~/.ssh/proxmox_key root@${{ env.MONAKA_HOST }} << 'EOF'
+          echo "=== Proxmox 上の VM 一覧 ==="
+          qm list | grep -i coolify || echo "coolify VM が見つかりません"
+          
+          # VM の詳細情報（ID 106 で確認）
+          echo ""
+          echo "=== VM 106 の状態 ==="
+          qm status 106 2>/dev/null || echo "VM 106 が見つかりません"
+          
+          # VM のネットワーク設定
+          echo ""
+          echo "=== VM 106 のネットワーク ==="
+          qm config 106 | grep net || echo "ネットワーク設定が見つかりません"
+          EOF
 
       # =============================================
       # 8. VM の起動を待機
