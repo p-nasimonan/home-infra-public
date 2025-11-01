@@ -38,9 +38,9 @@ locals {
       description = "Automatically via Terraform"
     }
     aduki = {
-      create = true
+      create = false
       node   = "aduki"
-      description = "Automatically via Terraform"
+      description = "Pre-configured - Terraform does not manage"
     }
     monaka = {
       create = false
