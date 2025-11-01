@@ -62,8 +62,10 @@ resource "proxmox_virtual_environment_container" "terraform_runner" {
 }
 
 # NAT Gateway for isolated network (10.0.0.0/24)
+# Zone: services (vmbr1)
+# 役割: default zone (vmbr0) と services zone (vmbr1) 間のルーティング
 resource "proxmox_virtual_environment_container" "nat_gateway" {
-  description  = "NAT Gateway for isolated network (10.0.0.0/24)"
+  description  = "NAT Gateway for services zone (10.0.0.0/24)"
   node_name    = "anko"
   unprivileged = false # Need privileged for NAT/routing
 
@@ -74,7 +76,7 @@ resource "proxmox_virtual_environment_container" "nat_gateway" {
       password = "Gateway2024!"
     }
 
-    # First interface: Management (192.168.0.x)
+    # First interface: Management zone (192.168.0.0/24) on vmbr0
     ip_config {
       ipv4 {
         address = "192.168.0.254/24"
@@ -82,7 +84,7 @@ resource "proxmox_virtual_environment_container" "nat_gateway" {
       }
     }
 
-    # Second interface: Isolated network (10.0.0.1)
+    # Second interface: Services zone (10.0.0.0/24) on vmbr1
     ip_config {
       ipv4 {
         address = "10.0.0.1/24"
@@ -108,13 +110,13 @@ resource "proxmox_virtual_environment_container" "nat_gateway" {
     size         = 8
   }
 
-  # Management interface on vmbr0
+  # Management interface on vmbr0 (default zone)
   network_interface {
     name   = "eth0"
     bridge = "vmbr0"
   }
 
-  # Isolated network interface on vmbr1
+  # Services zone interface on vmbr1 (10.0.0.0/24)
   network_interface {
     name   = "eth1"
     bridge = "vmbr1"
@@ -247,11 +249,14 @@ resource "proxmox_virtual_environment_container" "nat_gateway" {
 # ==========================================
 # Virtual Machines
 # ==========================================
+# Zone マッピング: 参照は network_zones.tf を参照
+# - default zone → vmbr0 (192.168.0.0/24)
+# - services zone → vmbr1 (10.0.0.0/24)
 
 # Coolify PaaS Platform
 resource "proxmox_virtual_environment_vm" "coolify" {
   name        = "coolify"
-  description = "Coolify - Self-hosted PaaS platform"
+  description = "Coolify - Self-hosted PaaS platform (Zone: services)"
   node_name   = "monaka"
 
   # Ubuntu テンプレート (VMID 9000) からクローン
