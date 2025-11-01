@@ -164,50 +164,12 @@ jobs:
       # =============================================
       # 8. VM の起動を待機
       # =============================================
-      - name: VM の起動を待機（60秒）
+      - name: VM の起動を待機（30秒）
         if: ${{ github.event.inputs.action == 'setup' }}
-        run: sleep 60
+        run: sleep 30
 
       # =============================================
-      # 8.5. NAT Gateway（10.0.0.1）への接続確認
-      # =============================================
-      - name: NAT Gateway への接続確認
-        if: ${{ github.event.inputs.action == 'setup' }}
-        run: |
-          echo "NAT Gateway (10.0.0.1) への接続確認..."
-          for i in {1..5}; do
-            if ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@192.168.0.254 "ip route" 2>/dev/null; then
-              echo "✓ NAT Gateway 接続成功"
-              break
-            else
-              echo "接続試行 $i/5 失敗、再試行..."
-              sleep 5
-            fi
-          done
-
-      # =============================================
-      # 9. SSH 接続テスト（Coolify VM）
-      # =============================================
-      - name: SSH 接続テスト（Coolify VM）
-        if: ${{ github.event.inputs.action == 'setup' }}
-        env:
-          COOLIFY_IP: "10.0.0.10"
-        run: |
-          echo "Coolify VM (${{ env.COOLIFY_IP }}) への SSH 接続テスト..."
-          for i in {1..10}; do
-            if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ubuntu@${{ env.COOLIFY_IP }} "uname -a" 2>/dev/null; then
-              echo "✓ SSH 接続成功"
-              exit 0
-            else
-              echo "接続試行 $i/10 失敗、再試行..."
-              sleep 10
-            fi
-          done
-          echo "✗ SSH 接続失敗（内部ネットワークの接続性を確認してください）"
-          exit 1
-
-      # =============================================
-      # 10. Ansible Inventory の確認
+      # 9. Ansible Inventory の確認
       # =============================================
       - name: Ansible Inventory の確認
         if: ${{ github.event.inputs.action == 'setup' }}
@@ -216,7 +178,7 @@ jobs:
           cat inventory.ini
           echo ""
           echo "Inventory の内容を確認："
-          ansible-inventory -i inventory.ini --list
+          cat inventory.ini
 
       # =============================================
       # 11. Ansible Ping テスト

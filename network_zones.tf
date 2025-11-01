@@ -58,7 +58,7 @@ resource "null_resource" "create_services_zone" {
 # ==========================================
 
 # anko ノードに vmbr1 を自動作成
-# monaka ノードは既に手動で作成済み（スキップ）
+# aduki, monaka ノードにも vmbr1 を自動作成
 resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1_anko" {
   name       = "vmbr1"
   node_name  = "anko"
@@ -67,15 +67,21 @@ resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1_anko" {
   comment    = "Isolated network for services (10.0.0.0/24) - Managed by Terraform"
 }
 
-# 注: monaka ノードの vmbr1 は既に手動で以下のように作成済み：
-# /etc/network/interfaces:
-# auto vmbr1
-# iface vmbr1 inet static
-#     address 10.0.0.1
-#     netmask 255.255.255.0
-#     bridge-ports none
-#     bridge-stp off
-#     bridge-fd 0
+resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1_monaka" {
+  name       = "vmbr1"
+  node_name  = "monaka"
+  address    = "10.0.0.1/24"
+  autostart  = true
+  comment    = "Isolated network for services (10.0.0.0/24) - Managed by Terraform"
+}
+
+resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1_aduki" {
+  name       = "vmbr1"
+  node_name  = "aduki"
+  address    = "10.0.0.1/24"
+  autostart  = true
+  comment    = "Isolated network for services (10.0.0.0/24) - Managed by Terraform"
+}
 
 # ==========================================
 # ゾーン参照用の出力
@@ -116,10 +122,16 @@ output "vmbr1_bridges" {
       created     = "Automatically via Terraform"
     }
     monaka = {
-      status      = "Manual (existing)"
+      status      = "Terraform managed"
       node        = "monaka"
-      address     = "10.0.0.1/24"
-      created     = "Pre-configured - no changes"
+      address     = proxmox_virtual_environment_network_linux_bridge.vmbr1_monaka.address
+      created     = "Automatically via Terraform"
+    }
+    aduki = {
+      status      = "Terraform managed"
+      node        = "aduki"
+      address     = proxmox_virtual_environment_network_linux_bridge.vmbr1_aduki.address
+      created     = "Automatically via Terraform"
     }
   }
 }
