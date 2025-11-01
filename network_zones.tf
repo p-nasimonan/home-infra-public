@@ -57,11 +57,18 @@ resource "null_resource" "create_services_zone" {
 # ネットワークブリッジ定義
 # ==========================================
 
-# 注: ブリッジ自体の作成は Proxmox ホストで手動で行う必要があります
-# Terraform では参照と割り当てのみ行います
+# anko ノードに vmbr1 を自動作成
+# monaka ノードは既に手動で作成済み（スキップ）
+resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1_anko" {
+  name       = "vmbr1"
+  node_name  = "anko"
+  address    = "10.0.0.1/24"
+  autostart  = true
+  comment    = "Isolated network for services (10.0.0.0/24) - Managed by Terraform"
+}
 
-# vmbr1 (Services Network) の作成スクリプト例：
-# /etc/network/interfaces に以下を追加
+# 注: monaka ノードの vmbr1 は既に手動で以下のように作成済み：
+# /etc/network/interfaces:
 # auto vmbr1
 # iface vmbr1 inet static
 #     address 10.0.0.1
@@ -96,5 +103,23 @@ output "nat_gateway_config" {
     network      = local.zones.services.network
     gateway_ip   = local.zones.services.gateway
     gateway_host = "nat-gateway (LXC on anko node)"
+  }
+}
+
+output "vmbr1_bridges" {
+  description = "vmbr1 ブリッジ管理状態"
+  value = {
+    anko = {
+      status      = "Terraform managed"
+      node        = "anko"
+      address     = proxmox_virtual_environment_network_linux_bridge.vmbr1_anko.address
+      created     = "Automatically via Terraform"
+    }
+    monaka = {
+      status      = "Manual (existing)"
+      node        = "monaka"
+      address     = "10.0.0.1/24"
+      created     = "Pre-configured - no changes"
+    }
   }
 }
