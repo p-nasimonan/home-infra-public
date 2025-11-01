@@ -3,21 +3,8 @@
 # ==========================================
 
 # Isolated Network Bridge (10.0.0.0/24)
-# This network is isolated and only accessible from 192.168.1.0/24
-# 
-# NOTE: vmbr1 は手動で作成済み（Proxmox ホストの /etc/network/interfaces で設定）
-# 以下のリソース定義はコメントアウト（Terraform で管理しない）
-# 
-# resource "proxmox_virtual_environment_network_linux_bridge" "vmbr1" {
-#   node_name = "anko"
-#   name      = "vmbr1"
-#   comment   = "Isolated network for services (10.0.0.0/24) - Managed by Terraform"
-#
-#   address   = "10.0.0.1/24"
-#   autostart = true
-# }
-
-# Firewall configuration for the isolated network
+# 注: vmbr1 ブリッジは network_zones.tf で定義・管理しています
+# このファイルでは削除しました（重複定義を避けるため）
 # Note: Proxmox firewall rules need to be configured at multiple levels:
 # 1. Datacenter level
 # 2. Node level  
@@ -25,7 +12,7 @@
 
 # Create security group for isolated network access
 resource "proxmox_virtual_environment_cluster_firewall_security_group" "isolated_net_access" {
-  name    = "isolated-net-access"
+  name    = "isolated-net"  # 短くした（18文字以下）
   comment = "Allow access to 10.0.0.0/24 from 192.168.1.0/24 only"
 
   rule {

@@ -125,10 +125,6 @@ resource "proxmox_virtual_environment_container" "nat_gateway" {
   started       = true
   start_on_boot = true
 
-  features {
-    nesting = true
-  }
-
   tags = ["gateway", "nat", "network", "managed"]
 }
 
