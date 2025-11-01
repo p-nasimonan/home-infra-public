@@ -11,25 +11,26 @@
 # 3. VM/Container level
 
 # Create security group for isolated network access
-resource "proxmox_virtual_environment_cluster_firewall_security_group" "isolated_net_access" {
-  name    = "isolated-net"  # 短くした（18文字以下）
-  comment = "Allow access to 10.0.0.0/24 from 192.168.1.0/24 only"
-
-  rule {
-    type    = "in"
-    action  = "ACCEPT"
-    comment = "Allow from home network (192.168.1.0/24)"
-    source  = "192.168.1.0/24"
-    log     = "info"
-  }
-
-  rule {
-    type    = "in"
-    action  = "DROP"
-    comment = "Drop all other traffic to isolated network"
-    log     = "info"
-  }
-}
+# 注: 既に存在するため、コメントアウト（必要に応じて手動削除後に有効化）
+# resource "proxmox_virtual_environment_cluster_firewall_security_group" "isolated_net_access" {
+#   name    = "isolated-net"  # 短くした（18文字以下）
+#   comment = "Allow access to 10.0.0.0/24 from 192.168.1.0/24 only"
+# 
+#   rule {
+#     type    = "in"
+#     action  = "ACCEPT"
+#     comment = "Allow from home network (192.168.1.0/24)"
+#     source  = "192.168.1.0/24"
+#     log     = "info"
+#   }
+# 
+#   rule {
+#     type    = "in"
+#     action  = "DROP"
+#     comment = "Drop all other traffic to isolated network"
+#     log     = "info"
+#   }
+# }
 
 # Note: For complete isolation, you should also:
 # 1. Enable firewall at datacenter level
