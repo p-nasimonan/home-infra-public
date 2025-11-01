@@ -1,0 +1,38 @@
+#cloud-config
+
+# ホスト名とユーザー設定はTerraformから自動設定される
+
+# パッケージの更新とアップグレード
+package_update: true
+package_upgrade: true
+
+# 必要なパッケージをインストール
+packages:
+  - openssh-server
+  - qemu-guest-agent
+  - curl
+  - git
+  - ca-certificates
+  - vim
+  - net-tools
+  - dnsutils
+
+# タイムゾーン設定
+timezone: Asia/Tokyo
+
+# SSH設定
+ssh_pwauth: true
+disable_root: false
+
+# 起動時コマンド
+runcmd:
+  # QEMU Guest Agent を有効化
+  - systemctl enable qemu-guest-agent
+  - systemctl start qemu-guest-agent
+  # 完了マーカー
+  - echo "cloud-init completed at $(date)" > /var/log/cloud-init-complete.log
+  # ネットワーク情報をログ
+  - ip addr show > /var/log/network-info.log
+
+# 完了時のメッセージ
+final_message: "Cloud-init completed. System is ready."

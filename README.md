@@ -9,6 +9,7 @@ Terraformを使用して自宅インフラ(Cloudflare Tunnel + Proxmox VE)を管
 - **Cloudflare Tunnel**: ローカルサービスを安全に公開
 - **Cloudflare DNS**: youkan.ukドメインのDNSレコード管理
 - **Proxmox VE**: VM/LXCコンテナ、ネットワーク設定の管理
+- **隔離ネットワーク**: 10.0.0.0/24 ゾーン (192.168.1.0/24からのみアクセス可能)
 
 ## 📋 前提条件
 
@@ -24,7 +25,8 @@ Terraformを使用して自宅インフラ(Cloudflare Tunnel + Proxmox VE)を管
 
 ```powershell
 # Terraform
-winget install --id Hashicorp.Terraform
+winget install --id Hashicorp.Terrafor
+m
 
 # Cloudflared
 winget install --id Cloudflare.cloudflared
@@ -50,6 +52,7 @@ home-infra/
 │       └── deploy_to_runner.yml  # GitHub Actions (self-hosted runner)
 ├── .gitignore
 ├── README.md
+├── ISOLATED_NETWORK.md          # 隔離ネットワーク設定ガイド
 ├── QUICKSTART.md                # クイックスタートガイド
 ├── ARCHITECTURE.md              # アーキテクチャとフロー説明
 ├── FLOW_DIAGRAM.md              # フロー図解
@@ -64,8 +67,13 @@ home-infra/
 ├── dns.tf                       # DNS設定
 ├── vms.tf                       # Proxmox VM/LXC設定
 ├── network.tf                   # Proxmoxネットワーク設定
+├── firewall.tf                  # Proxmoxファイアウォール設定
 ├── setup_runner.sh              # infra-runner セットアップスクリプト
-└── setup_github_runner.sh       # GitHub Actions runner セットアップ
+├── setup_github_runner.sh       # GitHub Actions runner セットアップ
+├── setup_nat_gateway.sh         # NAT Gateway セットアップスクリプト
+└── ansible/
+    ├── playbook-nat-gateway.yml # NAT設定Ansible Playbook
+    └── inventory-nat-gateway.ini # NAT Gateway インベントリ
 ```
 
 ## 🔑 認証情報

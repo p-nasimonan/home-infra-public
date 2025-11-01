@@ -13,52 +13,121 @@ resource "proxmox_virtual_environment_container" "terraform_runner" {
   description  = "Terraform and Cloudflared runner"
   node_name    = "anko"
   unprivileged = true
-  
+
   initialization {
     hostname = "infra-runner"
-    
+
     user_account {
       password = "Terraform2024!"
     }
-    
+
     ip_config {
       ipv4 {
         address = "dhcp"
       }
     }
   }
-  
+
   operating_system {
     template_file_id = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
     type             = "ubuntu"
   }
-  
+
   cpu {
     cores = 1
   }
-  
+
   memory {
     dedicated = 2048
   }
-  
+
   disk {
     datastore_id = "local-lvm"
     size         = 16
   }
-  
+
   network_interface {
     name   = "eth0"
     bridge = "vmbr0"
   }
-  
+
   started       = true
   start_on_boot = true
-  
+
   features {
     nesting = true
   }
-  
+
   tags = ["terraform", "cloudflared", "infra", "managed"]
+}
+
+# NAT Gateway for isolated network (10.0.0.0/24)
+resource "proxmox_virtual_environment_container" "nat_gateway" {
+  description  = "NAT Gateway for isolated network (10.0.0.0/24)"
+  node_name    = "anko"
+  unprivileged = false # Need privileged for NAT/routing
+
+  initialization {
+    hostname = "nat-gateway"
+
+    user_account {
+      password = "Gateway2024!"
+    }
+
+    # First interface: Management (192.168.0.x)
+    ip_config {
+      ipv4 {
+        address = "192.168.0.254/24"
+        gateway = "192.168.0.1"
+      }
+    }
+
+    # Second interface: Isolated network (10.0.0.1)
+    ip_config {
+      ipv4 {
+        address = "10.0.0.1/24"
+      }
+    }
+  }
+
+  operating_system {
+    template_file_id = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+    type             = "ubuntu"
+  }
+
+  cpu {
+    cores = 1
+  }
+
+  memory {
+    dedicated = 512
+  }
+
+  disk {
+    datastore_id = "local-lvm"
+    size         = 8
+  }
+
+  # Management interface on vmbr0
+  network_interface {
+    name   = "eth0"
+    bridge = "vmbr0"
+  }
+
+  # Isolated network interface on vmbr1
+  network_interface {
+    name   = "eth1"
+    bridge = "vmbr1"
+  }
+
+  started       = true
+  start_on_boot = true
+
+  features {
+    nesting = true
+  }
+
+  tags = ["gateway", "nat", "network", "managed"]
 }
 
 # ==========================================
@@ -184,54 +253,59 @@ resource "proxmox_virtual_environment_vm" "coolify" {
   name        = "coolify"
   description = "Coolify - Self-hosted PaaS platform"
   node_name   = "monaka"
-  
+
+  # Ubuntu テンプレート (VMID 9000) からクローン
+  clone {
+    vm_id = 9000
+    full  = true
+  }
+
   agent {
     enabled = true
   }
-  
+
   cpu {
     cores = 2
     type  = "host"
   }
-  
+
   memory {
     dedicated = 4096
   }
-  
-  # ディスク設定（新規作成）
+
+  # ディスク設定（テンプレートから拡張）
   disk {
     datastore_id = "local-lvm"
     interface    = "scsi0"
     size         = 32
-    file_format  = "raw"
   }
-  
+
   network_device {
     bridge = "vmbr0"
   }
-  
+
   initialization {
     datastore_id = "local-lvm"
-    
+
     ip_config {
       ipv4 {
         address = "dhcp"
       }
     }
-    
+
     user_account {
       username = "ubuntu"
       password = "Coolify2024!"
       keys     = []
     }
-    
+
     # cloud-init設定ファイルを参照（Proxmox snippets に配置済み）
     user_data_file_id = "local:snippets/coolify-init.yaml"
   }
-  
-  started       = true
-  on_boot       = true
-  
+
+  started = true
+  on_boot = true
+
   tags = ["coolify", "paas", "docker", "managed"]
 }
 
@@ -253,9 +327,9 @@ output "terraform_runner_info" {
 output "coolify_info" {
   description = "Coolify VM の情報"
   value = {
-    vm_id    = proxmox_virtual_environment_vm.coolify.vm_id
-    name     = proxmox_virtual_environment_vm.coolify.name
-    node     = proxmox_virtual_environment_vm.coolify.node_name
-    ipv4     = try(proxmox_virtual_environment_vm.coolify.ipv4_addresses[1][0], "DHCP assigned")
+    vm_id = proxmox_virtual_environment_vm.coolify.vm_id
+    name  = proxmox_virtual_environment_vm.coolify.name
+    node  = proxmox_virtual_environment_vm.coolify.node_name
+    ipv4  = try(proxmox_virtual_environment_vm.coolify.ipv4_addresses[1][0], "DHCP assigned")
   }
 }
