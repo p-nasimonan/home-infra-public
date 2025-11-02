@@ -26,6 +26,14 @@ resource "proxmox_virtual_environment_container" "terraform_runner" {
         address = "dhcp"
       }
     }
+
+    # eth1 (services zone): 10.0.0.2/24
+    ip_config {
+      ipv4 {
+        address = "10.0.0.2/24"
+        gateway = "10.0.0.1"
+      }
+    }
   }
 
   operating_system {
@@ -49,6 +57,12 @@ resource "proxmox_virtual_environment_container" "terraform_runner" {
   network_interface {
     name   = "eth0"
     bridge = "vmbr0"
+  }
+
+  # Services zone interface (10.0.0.0/24) on vmbr1
+  network_interface {
+    name   = "eth1"
+    bridge = "vmbr1"
   }
 
   started       = true
