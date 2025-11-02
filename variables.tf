@@ -55,6 +55,16 @@ variable "proxmox_node" {
 }
 
 # ==========================================
+# Container / VM Passwords
+# ==========================================
+
+variable "lxc_password" {
+  description = "LXC password"
+  type        = string
+  sensitive   = true
+}
+
+# ==========================================
 # Service Variables
 # ==========================================
 
