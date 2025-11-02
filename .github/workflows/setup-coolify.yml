@@ -62,26 +62,7 @@ jobs:
           ssh-keyscan -t rsa ${{ env.MONAKA_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       # =============================================
-      # 4. クラウドイメージをダウンロード（初回のみ）
-      # =============================================
-      - name: クラウドイメージをダウンロード
-        if: ${{ github.event.inputs.action == 'setup' }}
-        run: |
-          ssh -i ~/.ssh/proxmox_key root@${{ env.MONAKA_HOST }} << 'EOF'
-          set -e
-          mkdir -p /var/lib/vz/template/iso
-          if [ ! -f /var/lib/vz/template/iso/jammy-server-cloudimg-amd64.img ]; then
-            echo "クラウドイメージをダウンロード中..."
-            cd /var/lib/vz/template/iso
-            wget -q https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
-            echo "ダウンロード完了"
-          else
-            echo "クラウドイメージは既に存在します"
-          fi
-          EOF
-
-      # =============================================
-      # 4.5. cloud-init 設定ファイルを Proxmox に配置
+      # 4. cloud-init 設定ファイルを Proxmox に配置
       # =============================================
       - name: cloud-init ファイルを Proxmox に配置
         if: ${{ github.event.inputs.action == 'setup' }}
