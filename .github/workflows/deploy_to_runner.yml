@@ -58,6 +58,9 @@ jobs:
         run: terraform plan
         continue-on-error: false
 
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
       - name: Terraform Apply (manual only)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'apply'
         run: terraform apply -auto-approve
