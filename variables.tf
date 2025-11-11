@@ -35,3 +35,13 @@ variable "lxc_password" {
   type        = string
   sensitive   = true
 }
+
+# ==========================================
+# SSH Public Key for Cloud-init
+# ==========================================
+
+variable "ssh_public_key" {
+  description = "SSH public key for ubuntu user (Cloud-init)"
+  type        = string
+  default     = ""
+}
