@@ -3,8 +3,6 @@
 # API Permission Checker Script
 # GitHub Actions で実行される各種 API の権限を確認
 
-set -e
-
 echo "======================================"
 echo "API Permission Check Script"
 echo "======================================"
