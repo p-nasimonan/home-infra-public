@@ -42,25 +42,7 @@ check_result() {
   esac
 }
 
-echo "1. Checking GitHub API Permissions..."
-echo "---"
-
-# GitHub API トークンの確認
-if [ -z "$GITHUB_TOKEN" ]; then
-  check_result "GitHub Token" "✗" "GITHUB_TOKEN not set"
-else
-  GITHUB_API_TEST=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-    https://api.github.com/user -o /dev/null -w "%{http_code}")
-  
-  if [ "$GITHUB_API_TEST" = "200" ]; then
-    check_result "GitHub API" "✓" "Token is valid (HTTP $GITHUB_API_TEST)"
-  else
-    check_result "GitHub API" "✗" "Token authentication failed (HTTP $GITHUB_API_TEST)"
-  fi
-fi
-
-echo ""
-echo "2. Checking Proxmox API Permissions..."
+echo "1. Checking Proxmox API Permissions..."
 echo "---"
 
 # Proxmox API 認証チェック
@@ -82,7 +64,7 @@ else
 fi
 
 echo ""
-echo "3. Checking Terraform Cloud API..."
+echo "2. Checking Terraform Cloud API..."
 echo "---"
 
 # Terraform Cloud API 認証チェック

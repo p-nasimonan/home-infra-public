@@ -37,57 +37,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check GitHub API Permissions
-        run: |
-          echo "## GitHub API Permissions Check" >> $GITHUB_STEP_SUMMARY
-          echo "Checking GITHUB_TOKEN permissions..."
-          # GitHub API でトークンの権限を確認
-          PERMISSIONS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            https://api.github.com/user/installations \
-            -H "Accept: application/vnd.github.v3+json" | jq '.installations[0].permissions' 2>/dev/null || echo "Error or No permissions")
-          echo "Token Permissions: $PERMISSIONS" >> $GITHUB_STEP_SUMMARY
-          echo "✓ GitHub token is valid" >> $GITHUB_STEP_SUMMARY
-
       - name: Run API Permission Check Script
         run: |
           chmod +x .github/scripts/check-api-permissions.sh
           .github/scripts/check-api-permissions.sh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TF_VAR_proxmox_token_id: ${{ secrets.PROXMOX_TOKEN_ID }}
           TF_VAR_proxmox_token_secret: ${{ secrets.PROXMOX_TOKEN_SECRET }}
           TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
-
-      - name: Check Proxmox API Connection
-        run: |
-          echo "## Proxmox API Connection Check" >> $GITHUB_STEP_SUMMARY
-          # Proxmox API へのテスト接続
-          PROXMOX_URL="https://192.168.0.13:8006"
-          PROXMOX_TEST=$(curl -s -k -X GET "$PROXMOX_URL/api2/json/nodes" \
-            -H "Authorization: PVEAPIToken=${{ secrets.PROXMOX_TOKEN_ID }}=${{ secrets.PROXMOX_TOKEN_SECRET }}" 2>/dev/null || echo "Connection failed")
-          
-          if echo "$PROXMOX_TEST" | grep -q "data"; then
-            echo "✓ Proxmox API connection successful" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠ Proxmox API connection test inconclusive (may still be OK)" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: Check Terraform Cloud API
-        run: |
-          echo "## Terraform Cloud API Check" >> $GITHUB_STEP_SUMMARY
-          # Terraform Cloud API への認証確認
-          if [ -n "${{ secrets.TF_API_TOKEN }}" ]; then
-            TF_API_TEST=$(curl -s -H "Authorization: Bearer ${{ secrets.TF_API_TOKEN }}" \
-              https://app.terraform.io/api/v2/account/details 2>/dev/null | jq '.data.username' 2>/dev/null || echo "Failed")
-            
-            if [ "$TF_API_TEST" != "Failed" ] && [ "$TF_API_TEST" != "" ]; then
-              echo "✓ Terraform Cloud API token is valid (User: $TF_API_TEST)" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "✗ Terraform Cloud API token invalid or expired" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "⚠ TF_API_TOKEN not set (using local state if configured)" >> $GITHUB_STEP_SUMMARY
-          fi
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -109,16 +66,6 @@ jobs:
         id: plan
         run: terraform plan
         continue-on-error: false
-
-      - name: Permission Summary
-        if: always()
-        run: |
-          echo "## API Permission Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- GitHub Actions: ✓ Authenticated" >> $GITHUB_STEP_SUMMARY
-          echo "- Proxmox API: ✓ Checked" >> $GITHUB_STEP_SUMMARY
-          echo "- Terraform Cloud: ✓ Checked" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "**All API connections verified**" >> $GITHUB_STEP_SUMMARY
 
       - name: Terraform Apply (manual only)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'apply'
