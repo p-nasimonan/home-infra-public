@@ -32,6 +32,7 @@ jobs:
       TF_VAR_proxmox_token_id: ${{ secrets.PROXMOX_TOKEN_ID }}
       TF_VAR_proxmox_token_secret: ${{ secrets.PROXMOX_TOKEN_SECRET }}
       TF_VAR_lxc_password: ${{ secrets.LXC_PASSWORD }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
 
     steps:
       - name: Checkout repository
