@@ -27,16 +27,6 @@ variable "proxmox_node" {
 }
 
 # ==========================================
-# Container / VM Passwords
-# ==========================================
-
-variable "lxc_password" {
-  description = "LXC password"
-  type        = string
-  sensitive   = true
-}
-
-# ==========================================
 # SSH Public Key for Cloud-init
 # ==========================================
 
