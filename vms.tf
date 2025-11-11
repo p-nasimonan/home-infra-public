@@ -33,6 +33,12 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
     dedicated = 6144 # 6GB
   }
 
+  disk {
+    interface = "scsi0"
+    datastore_id = "local-lvm"
+    size      = 32
+  }
+
   network_device {
     bridge = "vmbr0"
   }
@@ -79,6 +85,12 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
     dedicated = 6144 # 6GB
   }
 
+  disk {
+    interface = "scsi0"
+    datastore_id = "local-lvm"
+    size      = 32
+  }
+
   network_device {
     bridge = "vmbr0"
   }
@@ -123,6 +135,12 @@ resource "proxmox_virtual_environment_vm" "k3s_server_3" {
 
   memory {
     dedicated = 6144 # 6GB
+  }
+
+  disk {
+    interface = "scsi0"
+    datastore_id = "local-lvm"
+    size      = 32
   }
 
   network_device {
@@ -173,6 +191,12 @@ resource "proxmox_virtual_environment_vm" "rancher_server" {
 
   memory {
     dedicated = 6144 # 6GB
+  }
+
+  disk {
+    interface = "scsi0"
+    datastore_id = "local-lvm"
+    size      = 32
   }
 
   network_device {
