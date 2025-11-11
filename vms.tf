@@ -15,8 +15,9 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
   vm_id       = 201
 
   clone {
-    vm_id = 9000 # Ubuntu 24.04 Cloud-init テンプレート
-    full  = true # フルクローン（NFS 参照ではなく完全コピー）
+    vm_id     = 9000
+    full      = true
+    node_name = "monaka" # テンプレートは monaka ノードにある
   }
 
   agent {
@@ -60,8 +61,9 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
   vm_id       = 202
 
   clone {
-    vm_id = 9000 # Ubuntu 24.04 Cloud-init テンプレート
-    full  = true # フルクローン（NFS 参照ではなく完全コピー）
+    vm_id     = 9000
+    full      = true
+    node_name = "monaka" # テンプレートは monaka ノードにある
   }
 
   agent {
@@ -105,8 +107,9 @@ resource "proxmox_virtual_environment_vm" "k3s_server_3" {
   vm_id       = 203
 
   clone {
-    vm_id = 9000 # Ubuntu 24.04 Cloud-init テンプレート
-    full  = true # フルクローン（NFS 参照ではなく完全コピー）
+    vm_id     = 9000
+    full      = true
+    node_name = "monaka" # テンプレートは monaka ノードにある
   }
 
   agent {
@@ -154,8 +157,9 @@ resource "proxmox_virtual_environment_vm" "rancher_server" {
   vm_id       = 210
 
   clone {
-    vm_id = 9000 # Ubuntu 24.04 Cloud-init テンプレート
-    full  = true # フルクローン（NFS 参照ではなく完全コピー）
+    vm_id     = 9000
+    full      = true
+    node_name = "monaka" # テンプレートは monaka ノードにある
   }
 
   agent {
