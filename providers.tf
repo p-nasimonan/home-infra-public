@@ -11,11 +11,6 @@ terraform {
   }
 
   required_providers {
-    cloudflare = {
-      source  = "cloudflare/cloudflare"
-      version = "~> 4.0"
-    }
-
     proxmox = {
       source  = "bpg/proxmox"
       version = "~> 0.73"
@@ -28,10 +23,6 @@ terraform {
   }
 }
 
-# Cloudflare Provider
-provider "cloudflare" {
-  api_token = var.cloudflare_api_token
-}
 
 # Proxmox Provider (bpg/proxmox for Proxmox VE 9.x support)
 provider "proxmox" {
