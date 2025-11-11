@@ -2,6 +2,7 @@
 # VM/LXC コンテナ定義
 # ==========================================
 # このファイルでProxmox上のVM/LXCコンテナを管理します
+# monakaにテンプレートを手動で作っておく
 
 # ==========================================
 # K3s クラスタ VM (HA etcd/Control Plane/Worker)
@@ -13,6 +14,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
   description = "K3s Server 1 (etcd, Control Plane, Worker - HA)"
   node_name   = "aduki"
   vm_id       = 201
+  migrate = true 
 
   clone {
     vm_id     = 9000
@@ -65,6 +67,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
   description = "K3s Server 2 (etcd, Control Plane, Worker - HA)"
   node_name   = "anko"
   vm_id       = 202
+  migrate = true 
 
   clone {
     vm_id     = 9000
