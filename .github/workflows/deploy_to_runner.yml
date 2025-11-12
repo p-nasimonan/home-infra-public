@@ -42,7 +42,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.5.4
         with:
           # GitHub Secretsから秘密鍵を直接渡す
-          ssh-private-key: ${{ secrets.PROXMOX_VE_SSH_PRIVATE_KEY }}
+          ssh-private-key: ${{ secrets.PROXMOX_SSH_PRIVATE_KEY }}
 
       - name: Run API Permission Check Script
         run: |
