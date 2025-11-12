@@ -98,6 +98,20 @@ resource "proxmox_virtual_environment_file" "k3s_meta_config_3" {
   }
 }
 
+resource "proxmox_virtual_environment_file" "rancher_meta_config" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "monaka"
+
+  source_raw {
+    file_name = "rancher-meta.yaml"
+    data = <<-EOF
+      #cloud-config
+      local-hostname: rancher-server
+    EOF
+  }
+}
+
 # ==========================================
 # K3s クラスタ VM (HA etcd/Control Plane/Worker)
 # ==========================================
