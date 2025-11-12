@@ -33,6 +33,5 @@ provider "proxmox" {
   ssh {
     agent    = true
     username = "terraform"
-    strict_host_key_checking = false
   }
 }
