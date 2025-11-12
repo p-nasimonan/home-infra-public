@@ -14,7 +14,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
   description = "K3s Server 1 (etcd, Control Plane, Worker - HA)"
   node_name   = "aduki"
   vm_id       = 201
-  migrate = true 
+  migrate     = true
 
   clone {
     vm_id     = 9000
@@ -46,7 +46,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
   }
 
   initialization {
-    datastore_id = "local"
+    datastore_id = "local-lvm"
     dns {
       servers = ["8.8.8.8", "8.8.4.4"]
     }
@@ -67,7 +67,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
   description = "K3s Server 2 (etcd, Control Plane, Worker - HA)"
   node_name   = "anko"
   vm_id       = 202
-  migrate = true 
+  migrate     = true
 
   clone {
     vm_id     = 9000
@@ -99,7 +99,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
   }
 
   initialization {
-    datastore_id = "local"
+    datastore_id = "local-lvm"
     dns {
       servers = ["8.8.8.8", "8.8.4.4"]
     }
@@ -151,7 +151,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_3" {
   }
 
   initialization {
-    datastore_id = "local"
+    datastore_id = "local-lvm"
     dns {
       servers = ["8.8.8.8", "8.8.4.4"]
     }
@@ -207,7 +207,7 @@ resource "proxmox_virtual_environment_vm" "rancher_server" {
   }
 
   initialization {
-    datastore_id = "local"
+    datastore_id = "local-lvm"
     dns {
       servers = ["8.8.8.8", "8.8.4.4"]
     }
