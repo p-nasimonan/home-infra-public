@@ -104,53 +104,6 @@ resource "proxmox_virtual_environment_file" "k3s_meta_config_3" {
 
 # K3s Server 1 (aduki node)
 resource "proxmox_virtual_environment_vm" "k3s_server_1" {
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = "monaka"
-
-  source_raw {
-    file_name = "k3s-meta-2.yaml"
-    data = <<-EOF
-      #cloud-config
-      local-hostname: k3s-server-2
-    EOF
-  }
-}
-
-resource "proxmox_virtual_environment_file" "k3s_meta_config_3" {
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = "monaka"
-
-  source_raw {
-    file_name = "k3s-meta-3.yaml"
-    data = <<-EOF
-      #cloud-config
-      local-hostname: k3s-server-3
-    EOF
-  }
-}
-
-resource "proxmox_virtual_environment_file" "rancher_meta_config" {
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = "monaka"
-
-  source_raw {
-    file_name = "rancher-meta.yaml"
-    data = <<-EOF
-      #cloud-config
-      local-hostname: rancher-server
-    EOF
-  }
-}
-
-# ==========================================
-# K3s クラスタ VM (HA etcd/Control Plane/Worker)
-# ==========================================
-
-# K3s Server 1 (aduki node)
-resource "proxmox_virtual_environment_vm" "k3s_server_1" {
   name        = "k3s-server-1"
   description = "K3s Server 1 (etcd, Control Plane, Worker - HA)"
   node_name   = "aduki"
