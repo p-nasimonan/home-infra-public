@@ -61,19 +61,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
       password = var.ubuntu_password
       keys     = [var.ssh_public_key]
     }
-    user_data_base64 = base64encode(<<-EOF
-      #!/bin/bash
-      set -e
-      # パッケージリストを更新
-      apt update
-      # QEMU Guest Agentをインストール
-      apt install -y qemu-guest-agent
-      # サービスが自動起動するように有効化
-      systemctl enable qemu-guest-agent
-      # サービスをすぐに開始
-      systemctl start qemu-guest-agent
-    EOF
-    )
+    vendor_data_base64 = base64encode(file("${path.module}/cloud-init-script.sh"))
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
@@ -132,19 +120,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
       password = var.ubuntu_password
       keys     = [var.ssh_public_key]
     }
-    user_data_base64 = base64encode(<<-EOF
-      #!/bin/bash
-      set -e
-      # パッケージリストを更新
-      apt update
-      # QEMU Guest Agentをインストール
-      apt install -y qemu-guest-agent
-      # サービスが自動起動するように有効化
-      systemctl enable qemu-guest-agent
-      # サービスをすぐに開始
-      systemctl start qemu-guest-agent
-    EOF
-    )
+    vendor_data_base64 = base64encode(file("${path.module}/cloud-init-script.sh"))
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
@@ -202,19 +178,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_3" {
       password = var.ubuntu_password
       keys     = [var.ssh_public_key]
     }
-    user_data_base64 = base64encode(<<-EOF
-      #!/bin/bash
-      set -e
-      # パッケージリストを更新
-      apt update
-      # QEMU Guest Agentをインストール
-      apt install -y qemu-guest-agent
-      # サービスが自動起動するように有効化
-      systemctl enable qemu-guest-agent
-      # サービスをすぐに開始
-      systemctl start qemu-guest-agent
-    EOF
-    )
+    vendor_data_base64 = base64encode(file("${path.module}/cloud-init-script.sh"))
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
@@ -276,19 +240,7 @@ resource "proxmox_virtual_environment_vm" "rancher_server" {
       password = var.ubuntu_password
       keys     = [var.ssh_public_key]
     }
-    user_data_base64 = base64encode(<<-EOF
-      #!/bin/bash
-      set -e
-      # パッケージリストを更新
-      apt update
-      # QEMU Guest Agentをインストール
-      apt install -y qemu-guest-agent
-      # サービスが自動起動するように有効化
-      systemctl enable qemu-guest-agent
-      # サービスをすぐに開始
-      systemctl start qemu-guest-agent
-    EOF
-    )
+    vendor_data_base64 = base64encode(file("${path.module}/cloud-init-script.sh"))
   }
 
   tags = ["rancher", "management", "ui"]
