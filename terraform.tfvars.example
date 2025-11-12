@@ -1,38 +1,33 @@
 # このファイルをコピーして terraform.tfvars を作成し、
 # 実際の値を設定してください
 
-# Cloudflare
-cloudflare_api_token = "your_cloudflare_api_token_here"
+# ==========================================
+# Proxmox 設定
+# ==========================================
 
-# Proxmox
 proxmox_token_id     = "terraform@pve!terraform"
 proxmox_token_secret = "your_proxmox_api_secret_here"
+proxmox_node         = "aduki"
 
-# デフォルトのProxmoxノード
-proxmox_node = "aduki"
-
-# 公開するサービス
-# services = {
-#   "app1" = {
-#     subdomain   = "app"
-#     local_url   = "http://192.168.0.100:3000"
-#     description = "My Application"
-#   }
-# }
+# Proxmox terraform ユーザーの SSH 秘密鍵（multiline）
+proxmox_ssh_private_key = <<-EOT
+-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEA...
+...
+-----END RSA PRIVATE KEY-----
+EOT
 
 # ==========================================
-# Cloudflare Access 設定
+# SSH 公開鍵設定（youkan ユーザー用）
 # ==========================================
 
-# 管理者として認証可能なメールアドレス
-# 注: GitHub ユーザーの GitHub登録メール（username@github.com のような Noreply メール）も可能
-admin_emails = [
-  # "your-email@example.com"
-]
+# SSH 公開鍵の直接指定（GitHub Actions / ローカルで環境変数で指定）
+ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2E..."
 
-# 信頼できるホームネットワークの IP
-# （この IP からのアクセスはポリシーチェックをスキップ）
-trusted_ips = [
-  # "203.0.113.0/24",  # あなたのホームネット
-  # "198.51.100.0/24"  # VPN/モバイル
-]
+# ==========================================
+# VM ユーザー設定
+# ==========================================
+
+# Ubuntu user のパスワード（Cloud-init 用）
+# 本番環境では SSH 認証のみを使用し、パスワード認証は無効化することを推奨
+ubuntu_password = ""

@@ -5,33 +5,142 @@
 # monakaにテンプレートを手動で作っておく
 
 # ==========================================
-# Cloud-init ユーザーデータ設定ファイル
+# Cloud-init User Data 設定ファイル（共通構成）
 # ==========================================
+# すべてのK3sノードで共通して実行される初期設定
+# - ユーザー: youkan (Ansible接続用)
+# - パッケージ: qemu-guest-agent, curl
+# - SWAP無効化（K3s必須）
+# - タイムゾーン設定（Asia/Tokyo）
 
-resource "proxmox_virtual_environment_file" "cloud_init_user_data" {
+resource "proxmox_virtual_environment_file" "k3s_user_config" {
   content_type = "snippets"
   datastore_id = "local"
   node_name    = "monaka"
 
   source_raw {
-    file_name = "cloud-init-qemu-agent.yaml"
+    file_name = "k3s-user-config.yaml"
     data = <<-EOF
       #cloud-config
+      timezone: Asia/Tokyo
+
+      # ユーザー設定: Ansibleが接続するユーザーの設定
+      users:
+        - name: youkan
+          groups: [sudo, docker]
+          shell: /bin/bash
+          ssh_authorized_keys:
+            - ${trimspace(var.ssh_public_key)}
+          sudo: ALL=(ALL) NOPASSWD:ALL
+
+      # パッケージのインストールとサービス起動
       package_update: true
-      package_upgrade: true
       packages:
         - qemu-guest-agent
         - curl
-        - sshpass
+
       runcmd:
         # タイムゾーンの設定 (JST)
         - timedatectl set-timezone Asia/Tokyo
         # QEMU Guest Agent の自動起動設定と開始
         - systemctl enable qemu-guest-agent
         - systemctl start qemu-guest-agent
-        # SWAP の無効化 (Kubernetes の必須要件)
         - swapoff -a
-        - sed -i '/swap/d' /etc/fstab
+        - sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+    EOF
+  }
+}
+
+# ==========================================
+# Cloud-init Meta Data 設定ファイル（ホスト名）
+# ==========================================
+# 各VMで異なるホスト名を設定するため、VM個別にmetadataを定義
+
+resource "proxmox_virtual_environment_file" "k3s_meta_config_1" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "monaka"
+
+  source_raw {
+    file_name = "k3s-meta-1.yaml"
+    data = <<-EOF
+      #cloud-config
+      local-hostname: k3s-server-1
+    EOF
+  }
+}
+
+resource "proxmox_virtual_environment_file" "k3s_meta_config_2" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "monaka"
+
+  source_raw {
+    file_name = "k3s-meta-2.yaml"
+    data = <<-EOF
+      #cloud-config
+      local-hostname: k3s-server-2
+    EOF
+  }
+}
+
+resource "proxmox_virtual_environment_file" "k3s_meta_config_3" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "monaka"
+
+  source_raw {
+    file_name = "k3s-meta-3.yaml"
+    data = <<-EOF
+      #cloud-config
+      local-hostname: k3s-server-3
+    EOF
+  }
+}
+
+# ==========================================
+# K3s クラスタ VM (HA etcd/Control Plane/Worker)
+# ==========================================
+
+# K3s Server 1 (aduki node)
+resource "proxmox_virtual_environment_vm" "k3s_server_1" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "monaka"
+
+  source_raw {
+    file_name = "k3s-meta-2.yaml"
+    data = <<-EOF
+      #cloud-config
+      local-hostname: k3s-server-2
+    EOF
+  }
+}
+
+resource "proxmox_virtual_environment_file" "k3s_meta_config_3" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "monaka"
+
+  source_raw {
+    file_name = "k3s-meta-3.yaml"
+    data = <<-EOF
+      #cloud-config
+      local-hostname: k3s-server-3
+    EOF
+  }
+}
+
+resource "proxmox_virtual_environment_file" "rancher_meta_config" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "monaka"
+
+  source_raw {
+    file_name = "rancher-meta.yaml"
+    data = <<-EOF
+      #cloud-config
+      local-hostname: rancher-server
     EOF
   }
 }
@@ -51,11 +160,11 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
   clone {
     vm_id     = 9000
     full      = true
-    node_name = "monaka" # テンプレートは monaka ノードにある
+    node_name = "monaka"
   }
 
   agent {
-    enabled = true # Proxmox VM agent 有効化
+    enabled = true
   }
 
   cpu {
@@ -64,13 +173,13 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
   }
 
   memory {
-    dedicated = 6144 # 6GB
+    dedicated = 6144
   }
 
   disk {
     interface    = "scsi0"
     datastore_id = "local-lvm"
-    size         = 32 # GB
+    size         = 32
   }
 
   network_device {
@@ -88,15 +197,16 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
         gateway = "192.168.0.1"
       }
     }
-    user_account {
-      username = "youkan"
-      password = var.ubuntu_password
-      keys     = [var.ssh_public_key]
-    }
-    user_data_file_id = proxmox_virtual_environment_file.cloud_init_user_data.id
+    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config.id
+    meta_data_file_id = proxmox_virtual_environment_file.k3s_meta_config_1.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
+
+  depends_on = [
+    proxmox_virtual_environment_file.k3s_user_config,
+    proxmox_virtual_environment_file.k3s_meta_config_1
+  ]
 }
 
 # K3s Server 2 (anko node)
@@ -110,11 +220,11 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
   clone {
     vm_id     = 9000
     full      = true
-    node_name = "monaka" # テンプレートは monaka ノードにある
+    node_name = "monaka"
   }
 
   agent {
-    enabled = true # Proxmox VM agent 有効化
+    enabled = true
   }
 
   cpu {
@@ -123,13 +233,13 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
   }
 
   memory {
-    dedicated = 6144 # 6GB
+    dedicated = 6144
   }
 
   disk {
     interface    = "scsi0"
     datastore_id = "local-lvm"
-    size         = 32 # GB
+    size         = 32
   }
 
   network_device {
@@ -147,15 +257,16 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
         gateway = "192.168.0.1"
       }
     }
-    user_account {
-      username = "youkan"
-      password = var.ubuntu_password
-      keys     = [var.ssh_public_key]
-    }
-    user_data_file_id = proxmox_virtual_environment_file.cloud_init_user_data.id
+    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config.id
+    meta_data_file_id = proxmox_virtual_environment_file.k3s_meta_config_2.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
+
+  depends_on = [
+    proxmox_virtual_environment_file.k3s_user_config,
+    proxmox_virtual_environment_file.k3s_meta_config_2
+  ]
 }
 
 # K3s Server 3 (monaka node)
@@ -168,11 +279,11 @@ resource "proxmox_virtual_environment_vm" "k3s_server_3" {
   clone {
     vm_id     = 9000
     full      = true
-    node_name = "monaka" # テンプレートは monaka ノードにある
+    node_name = "monaka"
   }
 
   agent {
-    enabled = true # Proxmox VM agent 有効化
+    enabled = true
   }
 
   cpu {
@@ -181,13 +292,13 @@ resource "proxmox_virtual_environment_vm" "k3s_server_3" {
   }
 
   memory {
-    dedicated = 6144 # 6GB
+    dedicated = 6144
   }
 
   disk {
     interface    = "scsi0"
     datastore_id = "local-lvm"
-    size         = 32 # GB
+    size         = 32
   }
 
   network_device {
@@ -205,22 +316,22 @@ resource "proxmox_virtual_environment_vm" "k3s_server_3" {
         gateway = "192.168.0.1"
       }
     }
-    user_account {
-      username = "youkan"
-      password = var.ubuntu_password
-      keys     = [var.ssh_public_key]
-    }
-    user_data_file_id = proxmox_virtual_environment_file.cloud_init_user_data.id
+    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config.id
+    meta_data_file_id = proxmox_virtual_environment_file.k3s_meta_config_3.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
+
+  depends_on = [
+    proxmox_virtual_environment_file.k3s_user_config,
+    proxmox_virtual_environment_file.k3s_meta_config_3
+  ]
 }
 
 # ==========================================
 # Rancher Server VM
 # ==========================================
 
-# Rancher Server (monaka node)
 resource "proxmox_virtual_environment_vm" "rancher_server" {
   name        = "rancher-server"
   description = "Rancher Server (K3s Cluster Management UI)"
@@ -230,11 +341,11 @@ resource "proxmox_virtual_environment_vm" "rancher_server" {
   clone {
     vm_id     = 9000
     full      = true
-    node_name = "monaka" # テンプレートは monaka ノードにある
+    node_name = "monaka"
   }
 
   agent {
-    enabled = true # Proxmox VM agent 有効化
+    enabled = true
   }
 
   cpu {
@@ -243,13 +354,13 @@ resource "proxmox_virtual_environment_vm" "rancher_server" {
   }
 
   memory {
-    dedicated = 6144 # 6GB
+    dedicated = 6144
   }
 
   disk {
     interface    = "scsi0"
     datastore_id = "local-lvm"
-    size         = 32 # GB
+    size         = 32
   }
 
   network_device {
@@ -267,15 +378,16 @@ resource "proxmox_virtual_environment_vm" "rancher_server" {
         gateway = "192.168.0.1"
       }
     }
-    user_account {
-      username = "youkan"
-      password = var.ubuntu_password
-      keys     = [var.ssh_public_key]
-    }
-    user_data_file_id = proxmox_virtual_environment_file.cloud_init_user_data.id
+    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config.id
+    meta_data_file_id = proxmox_virtual_environment_file.rancher_meta_config.id
   }
 
   tags = ["rancher", "management", "ui"]
+
+  depends_on = [
+    proxmox_virtual_environment_file.k3s_user_config,
+    proxmox_virtual_environment_file.rancher_meta_config
+  ]
 }
 
 # ==========================================

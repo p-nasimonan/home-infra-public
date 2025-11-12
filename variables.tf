@@ -31,7 +31,7 @@ variable "proxmox_node" {
 # ==========================================
 
 variable "ssh_public_key" {
-  description = "SSH public key for ubuntu user (Cloud-init)"
+  description = "SSH public key for youkan user (Cloud-init)"
   type        = string
   default     = ""
 }
@@ -42,6 +42,17 @@ variable "ssh_public_key" {
 
 variable "ubuntu_password" {
   description = "Ubuntu user password for Cloud-init"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+# ==========================================
+# Proxmox SSH Private Key
+# ==========================================
+
+variable "proxmox_ssh_private_key" {
+  description = "Proxmox SSH private key for Terraform provider"
   type        = string
   sensitive   = true
   default     = ""
