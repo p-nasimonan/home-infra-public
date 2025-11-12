@@ -35,3 +35,14 @@ variable "ssh_public_key" {
   type        = string
   default     = ""
 }
+
+# ==========================================
+# Ubuntu User Password
+# ==========================================
+
+variable "ubuntu_password" {
+  description = "Ubuntu user password for Cloud-init"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
