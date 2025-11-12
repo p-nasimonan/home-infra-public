@@ -5,6 +5,38 @@
 # monakaにテンプレートを手動で作っておく
 
 # ==========================================
+# Cloud-init ユーザーデータ設定ファイル
+# ==========================================
+
+resource "proxmox_virtual_environment_file" "cloud_init_user_data" {
+  content_type = "snippets"
+  datastore_id = "local-lvm"
+  node_name    = "monaka"
+
+  source_raw {
+    file_name = "cloud-init-qemu-agent.yaml"
+    data = <<-EOF
+      #cloud-config
+      package_update: true
+      package_upgrade: true
+      packages:
+        - qemu-guest-agent
+        - curl
+        - sshpass
+      runcmd:
+        # タイムゾーンの設定 (JST)
+        - timedatectl set-timezone Asia/Tokyo
+        # QEMU Guest Agent の自動起動設定と開始
+        - systemctl enable qemu-guest-agent
+        - systemctl start qemu-guest-agent
+        # SWAP の無効化 (Kubernetes の必須要件)
+        - swapoff -a
+        - sed -i '/swap/d' /etc/fstab
+    EOF
+  }
+}
+
+# ==========================================
 # K3s クラスタ VM (HA etcd/Control Plane/Worker)
 # ==========================================
 
@@ -61,7 +93,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
       password = var.ubuntu_password
       keys     = [var.ssh_public_key]
     }
-    vendor_data_base64 = base64encode(file("${path.module}/cloud-init-script.sh"))
+    user_data_file_id = proxmox_virtual_environment_file.cloud_init_user_data.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
@@ -120,7 +152,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
       password = var.ubuntu_password
       keys     = [var.ssh_public_key]
     }
-    vendor_data_base64 = base64encode(file("${path.module}/cloud-init-script.sh"))
+    user_data_file_id = proxmox_virtual_environment_file.cloud_init_user_data.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
@@ -178,7 +210,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server_3" {
       password = var.ubuntu_password
       keys     = [var.ssh_public_key]
     }
-    vendor_data_base64 = base64encode(file("${path.module}/cloud-init-script.sh"))
+    user_data_file_id = proxmox_virtual_environment_file.cloud_init_user_data.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
@@ -240,7 +272,7 @@ resource "proxmox_virtual_environment_vm" "rancher_server" {
       password = var.ubuntu_password
       keys     = [var.ssh_public_key]
     }
-    vendor_data_base64 = base64encode(file("${path.module}/cloud-init-script.sh"))
+    user_data_file_id = proxmox_virtual_environment_file.cloud_init_user_data.id
   }
 
   tags = ["rancher", "management", "ui"]
