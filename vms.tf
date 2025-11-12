@@ -10,7 +10,7 @@
 
 resource "proxmox_virtual_environment_file" "cloud_init_user_data" {
   content_type = "snippets"
-  datastore_id = "local-lvm"
+  datastore_id = "local"
   node_name    = "monaka"
 
   source_raw {
