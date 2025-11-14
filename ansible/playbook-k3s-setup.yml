@@ -1,0 +1,152 @@
+---
+- name: Setup K3s Cluster
+  hosts: k3s_servers
+  become: yes
+  vars:
+    k3s_version: v1.30.0
+    k3s_release_channel: latest
+    k3s_channel_url: "https://update.k3s.io"
+  tasks:
+    - name: Update and upgrade apt
+      apt:
+        update_cache: yes
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - wget
+          - git
+          - vim
+          - htop
+          - net-tools
+          - ntp
+        state: present
+
+    - name: Set timezone to Asia/Tokyo
+      timezone:
+        name: Asia/Tokyo
+
+    - name: Disable swap
+      shell: |
+        swapoff -a
+        sed -i '/ swap / s/^/#/' /etc/fstab
+
+    - name: Enable IP forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: "1"
+        sysctl_set: yes
+        state: present
+
+    - name: Enable bridge networking
+      sysctl:
+        name: net.bridge.bridge-nf-call-iptables
+        value: "1"
+        sysctl_set: yes
+        state: present
+
+    - name: Install K3s on first server (with etcd)
+      shell: |
+        curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_version }} K3S_TOKEN={{ k3s_token }} sh -s - \
+          server --cluster-init \
+          --disable servicelb \
+          --disable traefik
+      environment:
+        K3S_TOKEN: "{{ k3s_token }}"
+      when: inventory_hostname == "k3s-server-1"
+
+    - name: Get K3s token from first server
+      shell: cat /var/lib/rancher/k3s/server/node-token
+      register: k3s_token_result
+      when: inventory_hostname == "k3s-server-1"
+      changed_when: false
+
+    - name: Store K3s token
+      set_fact:
+        k3s_token: "{{ k3s_token_result.stdout }}"
+      when: inventory_hostname == "k3s-server-1"
+
+    - name: Get K3s API endpoint
+      shell: hostname -I | awk '{print $1}'
+      register: k3s_api_result
+      when: inventory_hostname == "k3s-server-1"
+      changed_when: false
+
+    - name: Store K3s API endpoint
+      set_fact:
+        k3s_api: "https://{{ k3s_api_result.stdout }}:6443"
+      when: inventory_hostname == "k3s-server-1"
+
+    - name: Install K3s on other servers
+      shell: |
+        curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_version }} K3S_TOKEN={{ hostvars['k3s-server-1']['k3s_token'] }} \
+          K3S_URL={{ hostvars['k3s-server-1']['k3s_api'] }} sh -s - server
+      when: inventory_hostname != "k3s-server-1"
+
+    - name: Wait for K3s to be ready
+      shell: k3s kubectl get nodes
+      register: k3s_nodes
+      until: k3s_nodes.rc == 0
+      retries: 30
+      delay: 10
+
+    - name: Get kubeconfig
+      fetch:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: /tmp/k3s-kubeconfig-{{ inventory_hostname }}.yaml
+        flat: yes
+      when: inventory_hostname == "k3s-server-1"
+
+- name: Setup Rancher Server
+  hosts: rancher_servers
+  become: yes
+  tasks:
+    - name: Update and upgrade apt
+      apt:
+        update_cache: yes
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - wget
+          - git
+          - vim
+          - htop
+          - net-tools
+          - ntp
+          - docker.io
+        state: present
+
+    - name: Set timezone to Asia/Tokyo
+      timezone:
+        name: Asia/Tokyo
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+    - name: Install Docker Compose
+      shell: |
+        curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        chmod +x /usr/local/bin/docker-compose
+
+    - name: Disable swap
+      shell: |
+        swapoff -a
+        sed -i '/ swap / s/^/#/' /etc/fstab
+
+    - name: Add rancher user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes

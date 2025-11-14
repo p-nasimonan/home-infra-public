@@ -29,14 +29,30 @@ jobs:
         working-directory: ${{ github.workspace }}
     
     env:
-      TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       TF_VAR_proxmox_token_id: ${{ secrets.PROXMOX_TOKEN_ID }}
       TF_VAR_proxmox_token_secret: ${{ secrets.PROXMOX_TOKEN_SECRET }}
-      TF_VAR_lxc_password: ${{ secrets.LXC_PASSWORD }}
+      TF_VAR_proxmox_ssh_private_key: ${{ secrets.PROXMOX_VE_SSH_PRIVATE_KEY }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+      TF_VAR_ubuntu_password: ${{ secrets.UBUNTU_PASSWORD }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup SSH 
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          # GitHub Secretsから秘密鍵を直接渡す
+          ssh-private-key: ${{ secrets.PROXMOX_VE_SSH_PRIVATE_KEY }}
+
+      - name: Run API Permission Check Script
+        run: |
+          chmod +x .github/scripts/check-api-permissions.sh
+          .github/scripts/check-api-permissions.sh
+        env:
+          TF_VAR_proxmox_token_id: ${{ secrets.PROXMOX_TOKEN_ID }}
+          TF_VAR_proxmox_token_secret: ${{ secrets.PROXMOX_TOKEN_SECRET }}
+          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
