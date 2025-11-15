@@ -3,26 +3,17 @@
 # ==========================================
 # このファイルでProxmox上のVM/LXCコンテナを管理します
 # monakaにテンプレートを手動で作っておく
+# テンプレート VM（VMID 9000）に youkan ユーザーを事前作成済み
 
 # ==========================================
 # 共通設定
 # ==========================================
 
 locals {
-  # cloud-init ユーザーセットアップの共通部分
-  k3s_user_setup = <<-SETUP
-# ユーザー設定: Ansibleが接続するユーザーの設定
-users:
-  - name: youkan
-    groups: [sudo, docker]
-    shell: /bin/bash
-    ssh_authorized_keys:
-      - ${trimspace(var.ssh_public_key)}
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    plain_text_passwd: K3sUser2024!
-    lock_passwd: false
-
-# パッケージのインストールとサービス起動
+  # cloud-init システムセットアップの共通部分
+  # ユーザーはテンプレートから引き継ぎ
+  k3s_system_setup = <<-SETUP
+# パッケージのインストール
 package_update: true
 packages:
   - qemu-guest-agent
@@ -34,6 +25,10 @@ runcmd:
   # QEMU Guest Agent の自動起動設定と開始
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
+  # シリアルコンソール有効化
+  - systemctl enable serial-getty@ttyS0.service
+  - systemctl start serial-getty@ttyS0.service
+  # SWAP無効化（K3s必須）
   - swapoff -a
   - sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
 SETUP
@@ -42,11 +37,11 @@ SETUP
 # ==========================================
 # Cloud-init User Data 設定ファイル（ホストごと）
 # ==========================================
-# すべてのK3sノードで共通して実行される初期設定
-# - ユーザー: youkan (Ansible接続用)
 # - パッケージ: qemu-guest-agent, curl
 # - SWAP無効化（K3s必須）
 # - タイムゾーン設定（Asia/Tokyo）
+# - シリアルコンソール有効化
+# ユーザー設定はテンプレートから引き継ぎ
 
 # aduki ノード用
 resource "proxmox_virtual_environment_file" "k3s_user_config_aduki" {
@@ -61,7 +56,7 @@ resource "proxmox_virtual_environment_file" "k3s_user_config_aduki" {
 local-hostname: k3s-server-1
 timezone: Asia/Tokyo
 
-${local.k3s_user_setup}
+${local.k3s_system_setup}
     EOF
   }
 }
@@ -79,7 +74,7 @@ resource "proxmox_virtual_environment_file" "k3s_user_config_anko" {
 local-hostname: k3s-server-2
 timezone: Asia/Tokyo
 
-${local.k3s_user_setup}
+${local.k3s_system_setup}
     EOF
   }
 }
@@ -97,7 +92,7 @@ resource "proxmox_virtual_environment_file" "k3s_user_config_monaka" {
 local-hostname: k3s-server-3
 timezone: Asia/Tokyo
 
-${local.k3s_user_setup}
+${local.k3s_system_setup}
     EOF
   }
 }
