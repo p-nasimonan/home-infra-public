@@ -5,7 +5,7 @@
 # monakaにテンプレートを手動で作っておく
 
 # ==========================================
-# Cloud-init User Data 設定ファイル（共通構成）
+# Cloud-init User Data 設定ファイル（ホストごと）
 # ==========================================
 # すべてのK3sノードで共通して実行される初期設定
 # - ユーザー: youkan (Ansible接続用)
@@ -13,7 +13,86 @@
 # - SWAP無効化（K3s必須）
 # - タイムゾーン設定（Asia/Tokyo）
 
-resource "proxmox_virtual_environment_file" "k3s_user_config" {
+# aduki ノード用
+resource "proxmox_virtual_environment_file" "k3s_user_config_aduki" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "aduki"
+
+  source_raw {
+    file_name = "k3s-user-config.yaml"
+    data = <<-EOF
+      #cloud-config
+      timezone: Asia/Tokyo
+
+      # ユーザー設定: Ansibleが接続するユーザーの設定
+      users:
+        - name: youkan
+          groups: [sudo, docker]
+          shell: /bin/bash
+          ssh_authorized_keys:
+            - ${trimspace(var.ssh_public_key)}
+          sudo: ALL=(ALL) NOPASSWD:ALL
+
+      # パッケージのインストールとサービス起動
+      package_update: true
+      packages:
+        - qemu-guest-agent
+        - curl
+
+      runcmd:
+        # タイムゾーンの設定 (JST)
+        - timedatectl set-timezone Asia/Tokyo
+        # QEMU Guest Agent の自動起動設定と開始
+        - systemctl enable qemu-guest-agent
+        - systemctl start qemu-guest-agent
+        - swapoff -a
+        - sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+    EOF
+  }
+}
+
+# anko ノード用
+resource "proxmox_virtual_environment_file" "k3s_user_config_anko" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "anko"
+
+  source_raw {
+    file_name = "k3s-user-config.yaml"
+    data = <<-EOF
+      #cloud-config
+      timezone: Asia/Tokyo
+
+      # ユーザー設定: Ansibleが接続するユーザーの設定
+      users:
+        - name: youkan
+          groups: [sudo, docker]
+          shell: /bin/bash
+          ssh_authorized_keys:
+            - ${trimspace(var.ssh_public_key)}
+          sudo: ALL=(ALL) NOPASSWD:ALL
+
+      # パッケージのインストールとサービス起動
+      package_update: true
+      packages:
+        - qemu-guest-agent
+        - curl
+
+      runcmd:
+        # タイムゾーンの設定 (JST)
+        - timedatectl set-timezone Asia/Tokyo
+        # QEMU Guest Agent の自動起動設定と開始
+        - systemctl enable qemu-guest-agent
+        - systemctl start qemu-guest-agent
+        - swapoff -a
+        - sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+    EOF
+  }
+}
+
+# monaka ノード用
+resource "proxmox_virtual_environment_file" "k3s_user_config_monaka" {
   content_type = "snippets"
   datastore_id = "local"
   node_name    = "monaka"
@@ -164,14 +243,14 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
         gateway = "192.168.0.1"
       }
     }
-    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config.id
+    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config_aduki.id
     meta_data_file_id = proxmox_virtual_environment_file.k3s_meta_config_1.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
 
   depends_on = [
-    proxmox_virtual_environment_file.k3s_user_config,
+    proxmox_virtual_environment_file.k3s_user_config_aduki,
     proxmox_virtual_environment_file.k3s_meta_config_1
   ]
 }
@@ -224,14 +303,14 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
         gateway = "192.168.0.1"
       }
     }
-    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config.id
+    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config_anko.id
     meta_data_file_id = proxmox_virtual_environment_file.k3s_meta_config_2.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
 
   depends_on = [
-    proxmox_virtual_environment_file.k3s_user_config,
+    proxmox_virtual_environment_file.k3s_user_config_anko,
     proxmox_virtual_environment_file.k3s_meta_config_2
   ]
 }
@@ -283,14 +362,14 @@ resource "proxmox_virtual_environment_vm" "k3s_server_3" {
         gateway = "192.168.0.1"
       }
     }
-    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config.id
+    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config_monaka.id
     meta_data_file_id = proxmox_virtual_environment_file.k3s_meta_config_3.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
 
   depends_on = [
-    proxmox_virtual_environment_file.k3s_user_config,
+    proxmox_virtual_environment_file.k3s_user_config_monaka,
     proxmox_virtual_environment_file.k3s_meta_config_3
   ]
 }
