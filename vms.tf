@@ -54,12 +54,12 @@ resource "proxmox_virtual_environment_file" "k3s_user_config" {
 # ==========================================
 # Cloud-init Meta Data 設定ファイル（ホスト名）
 # ==========================================
-# 各VMで異なるホスト名を設定するため、VM個別にmetadataを定義
+# 各VMで異なるホスト名を設定するため、VM個別にmetadataを定義、ノードごとに割り当てる
 
 resource "proxmox_virtual_environment_file" "k3s_meta_config_1" {
   content_type = "snippets"
   datastore_id = "local"
-  node_name    = "monaka"
+  node_name    = "aduki"
 
   source_raw {
     file_name = "k3s-meta-1.yaml"
@@ -73,7 +73,7 @@ resource "proxmox_virtual_environment_file" "k3s_meta_config_1" {
 resource "proxmox_virtual_environment_file" "k3s_meta_config_2" {
   content_type = "snippets"
   datastore_id = "local"
-  node_name    = "monaka"
+  node_name    = "anko"
 
   source_raw {
     file_name = "k3s-meta-2.yaml"
