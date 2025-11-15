@@ -19,6 +19,8 @@ users:
     ssh_authorized_keys:
       - ${trimspace(var.ssh_public_key)}
     sudo: ALL=(ALL) NOPASSWD:ALL
+    plain_text_passwd: K3sUser2024!
+    lock_passwd: false
 
 # パッケージのインストールとサービス起動
 package_update: true
