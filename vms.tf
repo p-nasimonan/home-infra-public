@@ -5,6 +5,39 @@
 # monakaにテンプレートを手動で作っておく
 
 # ==========================================
+# 共通設定
+# ==========================================
+
+locals {
+  # cloud-init ユーザーセットアップの共通部分
+  k3s_user_setup = <<-SETUP
+# ユーザー設定: Ansibleが接続するユーザーの設定
+users:
+  - name: youkan
+    groups: [sudo, docker]
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${trimspace(var.ssh_public_key)}
+    sudo: ALL=(ALL) NOPASSWD:ALL
+
+# パッケージのインストールとサービス起動
+package_update: true
+packages:
+  - qemu-guest-agent
+  - curl
+
+runcmd:
+  # タイムゾーンの設定 (JST)
+  - timedatectl set-timezone Asia/Tokyo
+  # QEMU Guest Agent の自動起動設定と開始
+  - systemctl enable qemu-guest-agent
+  - systemctl start qemu-guest-agent
+  - swapoff -a
+  - sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+SETUP
+}
+
+# ==========================================
 # Cloud-init User Data 設定ファイル（ホストごと）
 # ==========================================
 # すべてのK3sノードで共通して実行される初期設定
@@ -22,32 +55,11 @@ resource "proxmox_virtual_environment_file" "k3s_user_config_aduki" {
   source_raw {
     file_name = "k3s-user-config.yaml"
     data = <<-EOF
-      #cloud-config
-      timezone: Asia/Tokyo
+#cloud-config
+local-hostname: k3s-server-1
+timezone: Asia/Tokyo
 
-      # ユーザー設定: Ansibleが接続するユーザーの設定
-      users:
-        - name: youkan
-          groups: [sudo, docker]
-          shell: /bin/bash
-          ssh_authorized_keys:
-            - ${trimspace(var.ssh_public_key)}
-          sudo: ALL=(ALL) NOPASSWD:ALL
-
-      # パッケージのインストールとサービス起動
-      package_update: true
-      packages:
-        - qemu-guest-agent
-        - curl
-
-      runcmd:
-        # タイムゾーンの設定 (JST)
-        - timedatectl set-timezone Asia/Tokyo
-        # QEMU Guest Agent の自動起動設定と開始
-        - systemctl enable qemu-guest-agent
-        - systemctl start qemu-guest-agent
-        - swapoff -a
-        - sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+${local.k3s_user_setup}
     EOF
   }
 }
@@ -61,32 +73,11 @@ resource "proxmox_virtual_environment_file" "k3s_user_config_anko" {
   source_raw {
     file_name = "k3s-user-config.yaml"
     data = <<-EOF
-      #cloud-config
-      timezone: Asia/Tokyo
+#cloud-config
+local-hostname: k3s-server-2
+timezone: Asia/Tokyo
 
-      # ユーザー設定: Ansibleが接続するユーザーの設定
-      users:
-        - name: youkan
-          groups: [sudo, docker]
-          shell: /bin/bash
-          ssh_authorized_keys:
-            - ${trimspace(var.ssh_public_key)}
-          sudo: ALL=(ALL) NOPASSWD:ALL
-
-      # パッケージのインストールとサービス起動
-      package_update: true
-      packages:
-        - qemu-guest-agent
-        - curl
-
-      runcmd:
-        # タイムゾーンの設定 (JST)
-        - timedatectl set-timezone Asia/Tokyo
-        # QEMU Guest Agent の自動起動設定と開始
-        - systemctl enable qemu-guest-agent
-        - systemctl start qemu-guest-agent
-        - swapoff -a
-        - sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+${local.k3s_user_setup}
     EOF
   }
 }
@@ -100,93 +91,11 @@ resource "proxmox_virtual_environment_file" "k3s_user_config_monaka" {
   source_raw {
     file_name = "k3s-user-config.yaml"
     data = <<-EOF
-      #cloud-config
-      timezone: Asia/Tokyo
+#cloud-config
+local-hostname: k3s-server-3
+timezone: Asia/Tokyo
 
-      # ユーザー設定: Ansibleが接続するユーザーの設定
-      users:
-        - name: youkan
-          groups: [sudo, docker]
-          shell: /bin/bash
-          ssh_authorized_keys:
-            - ${trimspace(var.ssh_public_key)}
-          sudo: ALL=(ALL) NOPASSWD:ALL
-
-      # パッケージのインストールとサービス起動
-      package_update: true
-      packages:
-        - qemu-guest-agent
-        - curl
-
-      runcmd:
-        # タイムゾーンの設定 (JST)
-        - timedatectl set-timezone Asia/Tokyo
-        # QEMU Guest Agent の自動起動設定と開始
-        - systemctl enable qemu-guest-agent
-        - systemctl start qemu-guest-agent
-        - swapoff -a
-        - sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
-    EOF
-  }
-}
-
-# ==========================================
-# Cloud-init Meta Data 設定ファイル（ホスト名）
-# ==========================================
-# 各VMで異なるホスト名を設定するため、VM個別にmetadataを定義、ノードごとに割り当てる
-
-resource "proxmox_virtual_environment_file" "k3s_meta_config_1" {
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = "aduki"
-
-  source_raw {
-    file_name = "k3s-meta-1.yaml"
-    data = <<-EOF
-      #cloud-config
-      local-hostname: k3s-server-1
-    EOF
-  }
-}
-
-resource "proxmox_virtual_environment_file" "k3s_meta_config_2" {
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = "anko"
-
-  source_raw {
-    file_name = "k3s-meta-2.yaml"
-    data = <<-EOF
-      #cloud-config
-      local-hostname: k3s-server-2
-    EOF
-  }
-}
-
-resource "proxmox_virtual_environment_file" "k3s_meta_config_3" {
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = "monaka"
-
-  source_raw {
-    file_name = "k3s-meta-3.yaml"
-    data = <<-EOF
-      #cloud-config
-      local-hostname: k3s-server-3
-    EOF
-  }
-}
-
-resource "proxmox_virtual_environment_file" "rancher_meta_config" {
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = "monaka"
-
-  source_raw {
-    file_name = "rancher-meta.yaml"
-    data = <<-EOF
-      #cloud-config
-      local-hostname: rancher-server
+${local.k3s_user_setup}
     EOF
   }
 }
@@ -244,14 +153,12 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
       }
     }
     user_data_file_id = proxmox_virtual_environment_file.k3s_user_config_aduki.id
-    meta_data_file_id = proxmox_virtual_environment_file.k3s_meta_config_1.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
 
   depends_on = [
-    proxmox_virtual_environment_file.k3s_user_config_aduki,
-    proxmox_virtual_environment_file.k3s_meta_config_1
+    proxmox_virtual_environment_file.k3s_user_config_aduki
   ]
 }
 
@@ -304,14 +211,12 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
       }
     }
     user_data_file_id = proxmox_virtual_environment_file.k3s_user_config_anko.id
-    meta_data_file_id = proxmox_virtual_environment_file.k3s_meta_config_2.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
 
   depends_on = [
-    proxmox_virtual_environment_file.k3s_user_config_anko,
-    proxmox_virtual_environment_file.k3s_meta_config_2
+    proxmox_virtual_environment_file.k3s_user_config_anko
   ]
 }
 
@@ -363,14 +268,12 @@ resource "proxmox_virtual_environment_vm" "k3s_server_3" {
       }
     }
     user_data_file_id = proxmox_virtual_environment_file.k3s_user_config_monaka.id
-    meta_data_file_id = proxmox_virtual_environment_file.k3s_meta_config_3.id
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
 
   depends_on = [
-    proxmox_virtual_environment_file.k3s_user_config_monaka,
-    proxmox_virtual_environment_file.k3s_meta_config_3
+    proxmox_virtual_environment_file.k3s_user_config_monaka
   ]
 }
 
@@ -425,14 +328,12 @@ resource "proxmox_virtual_environment_vm" "rancher_server" {
       }
     }
     user_data_file_id = proxmox_virtual_environment_file.k3s_user_config_monaka.id
-    meta_data_file_id = proxmox_virtual_environment_file.rancher_meta_config.id
   }
 
   tags = ["rancher", "management", "ui"]
 
   depends_on = [
-    proxmox_virtual_environment_file.k3s_user_config_monaka,
-    proxmox_virtual_environment_file.rancher_meta_config
+    proxmox_virtual_environment_file.k3s_user_config_monaka
   ]
 }
 
