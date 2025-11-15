@@ -424,14 +424,14 @@ resource "proxmox_virtual_environment_vm" "rancher_server" {
         gateway = "192.168.0.1"
       }
     }
-    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config.id
+    user_data_file_id = proxmox_virtual_environment_file.k3s_user_config_monaka.id
     meta_data_file_id = proxmox_virtual_environment_file.rancher_meta_config.id
   }
 
   tags = ["rancher", "management", "ui"]
 
   depends_on = [
-    proxmox_virtual_environment_file.k3s_user_config,
+    proxmox_virtual_environment_file.k3s_user_config_monaka,
     proxmox_virtual_environment_file.rancher_meta_config
   ]
 }
