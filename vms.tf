@@ -61,6 +61,11 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
         gateway = "192.168.0.1"
       }
     }
+    user_account {
+      username = "youkan"
+      password = var.ubuntu_password
+      keys     = [var.ssh_public_key]
+    }
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
@@ -114,6 +119,11 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
         gateway = "192.168.0.1"
       }
     }
+    user_account {
+      username = "youkan"
+      password = var.ubuntu_password
+      keys     = [var.ssh_public_key]
+    }
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
@@ -165,6 +175,11 @@ resource "proxmox_virtual_environment_vm" "k3s_server_3" {
         address = "192.168.0.22/24"
         gateway = "192.168.0.1"
       }
+    }
+    user_account {
+      username = "youkan"
+      password = var.ubuntu_password
+      keys     = [var.ssh_public_key]
     }
   }
 
@@ -220,6 +235,11 @@ resource "proxmox_virtual_environment_vm" "rancher_server" {
         address = "192.168.0.30/24"
         gateway = "192.168.0.1"
       }
+    }
+    user_account {
+      username = "youkan"
+      password = var.ubuntu_password
+      keys     = [var.ssh_public_key]
     }
   }
 

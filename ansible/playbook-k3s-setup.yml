@@ -3,10 +3,19 @@
   hosts: k3s_servers
   become: yes
   vars:
-    k3s_version: v1.30.0
+    k3s_version: v1.34.1
     k3s_release_channel: latest
     k3s_channel_url: "https://update.k3s.io"
   tasks:
+    - name: Bootstrap Python when missing (for Ansible controller)
+      raw: |
+        if command -v python3 >/dev/null 2>&1; then
+          exit 0
+        fi
+        sudo apt-get update -y
+        sudo apt-get install -y python3 python3-apt
+      changed_when: false
+
     - name: Update and upgrade apt
       apt:
         update_cache: yes

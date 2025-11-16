@@ -31,7 +31,7 @@ provider "proxmox" {
   insecure  = true
 
   ssh {
-    agent       = true
-    username    = "terraform"
+    agent    = true
+    username = "terraform"
   }
 }
