@@ -1,29 +1,66 @@
 ---
-- name: Setup K3s Cluster
+# ==========================================
+# xanmanning.k3s を使用した K3s クラスタセットアップ
+# ==========================================
+# 用途:
+#   - K3s クラスタを Proxmox VM 上に自動デプロイ
+#   - embedded etcd による HA構成（3 ノード）
+#   - Rancher 管理サーバーを別途デプロイ可能
+#
+# 実行方法:
+#   ansible-playbook -i inventory.ini playbook-k3s-setup.yml -v
+
+- name: K3s クラスタセットアップ
   hosts: k3s_servers
-  become: yes
   vars:
-    k3s_version: v1.34.1
-    k3s_release_channel: latest
-    k3s_channel_url: "https://update.k3s.io"
-  tasks:
-    - name: Bootstrap Python when missing (for Ansible controller)
+    # K3s リリース版
+    k3s_release_version: v1.34.1
+    # HA クラスタ用 embedded etcd 有効化
+    k3s_etcd_datastore: true
+    # K3s サーバー設定（制御プレーン）
+    k3s_server:
+      # デフォルトコンポーネント無効化
+      disable:
+        - servicelb
+        - traefik
+      # Flannel バックエンド設定
+      flannel-backend: vxlan
+      # API サーバー監査ログ設定
+      audit-log-maxage: 30
+      audit-log-maxbackup: 10
+      audit-log-maxsize: 100
+    # K3s エージェント設定（ワーカー）
+    k3s_agent:
+      # ノードラベル
+      node-label:
+        - "node-role=worker"
+    # バリデーション処理をスキップ（必要に応じて）
+    k3s_skip_validation: false
+    # Python 3 インタープリタパス
+    ansible_python_interpreter: /usr/bin/python3
+  
+  pre_tasks:
+    # Python がない場合はインストール
+    - name: Python がない場合はブートストラップ
       raw: |
         if command -v python3 >/dev/null 2>&1; then
           exit 0
         fi
         sudo apt-get update -y
-        sudo apt-get install -y python3 python3-apt
+        sudo apt-get install -y python3 python3-apt python3-pip
       changed_when: false
 
-    - name: Update and upgrade apt
+    # APT キャッシュ更新とパッケージ更新
+    - name: APT キャッシュ更新とディストリビューション更新
       apt:
         update_cache: yes
         upgrade: dist
         autoremove: yes
         autoclean: yes
+      become: yes
 
-    - name: Install required packages
+    # 必要なパッケージをインストール
+    - name: 必要なパッケージをインストール
       apt:
         name:
           - curl
@@ -34,94 +71,100 @@
           - net-tools
           - ntp
         state: present
+      become: yes
 
-    - name: Set timezone to Asia/Tokyo
+    # タイムゾーンを Asia/Tokyo に設定
+    - name: タイムゾーンを Asia/Tokyo に設定
       timezone:
         name: Asia/Tokyo
+      become: yes
 
-    - name: Disable swap
-      shell: |
-        swapoff -a
-        sed -i '/ swap / s/^/#/' /etc/fstab
-
-    - name: Enable IP forwarding
+    # IP フォワーディング有効化
+    - name: IP フォワーディング有効化
       sysctl:
         name: net.ipv4.ip_forward
         value: "1"
         sysctl_set: yes
         state: present
+      become: yes
 
-    - name: Enable bridge networking
+    # ブリッジネットワーク設定有効化
+    - name: ブリッジネットワーク設定有効化
       sysctl:
         name: net.bridge.bridge-nf-call-iptables
         value: "1"
         sysctl_set: yes
         state: present
+      become: yes
 
-    - name: Install K3s on first server (with etcd)
-      shell: |
-        curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_version }} K3S_TOKEN={{ k3s_token }} sh -s - \
-          server --cluster-init \
-          --disable servicelb \
-          --disable traefik
-      environment:
-        K3S_TOKEN: "{{ k3s_token }}"
-      when: inventory_hostname == "k3s-server-1"
-
-    - name: Get K3s token from first server
-      shell: cat /var/lib/rancher/k3s/server/node-token
-      register: k3s_token_result
-      when: inventory_hostname == "k3s-server-1"
-      changed_when: false
-
-    - name: Store K3s token
+    # k3s-server-1 を制御ノードに設定
+    - name: k3s-server-1 を制御ノードに設定
       set_fact:
-        k3s_token: "{{ k3s_token_result.stdout }}"
+        k3s_control_node: true
       when: inventory_hostname == "k3s-server-1"
 
-    - name: Get K3s API endpoint
-      shell: hostname -I | awk '{print $1}'
-      register: k3s_api_result
-      when: inventory_hostname == "k3s-server-1"
-      changed_when: false
+  roles:
+    - role: xanmanning.k3s
+      become: yes
 
-    - name: Store K3s API endpoint
-      set_fact:
-        k3s_api: "https://{{ k3s_api_result.stdout }}:6443"
-      when: inventory_hostname == "k3s-server-1"
-
-    - name: Install K3s on other servers
+  post_tasks:
+    # K3s が起動完了するまで待機
+    - name: K3s が起動完了するまで待機
       shell: |
-        curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_version }} K3S_TOKEN={{ hostvars['k3s-server-1']['k3s_token'] }} \
-          K3S_URL={{ hostvars['k3s-server-1']['k3s_api'] }} sh -s - server
-      when: inventory_hostname != "k3s-server-1"
-
-    - name: Wait for K3s to be ready
-      shell: k3s kubectl get nodes
-      register: k3s_nodes
-      until: k3s_nodes.rc == 0
+        k3s kubectl get nodes
+      register: k3s_nodes_ready
+      until: k3s_nodes_ready.rc == 0 and k3s_nodes_ready.stdout_lines | length > 0
       retries: 30
       delay: 10
+      when: k3s_control_node is defined and k3s_control_node
 
-    - name: Get kubeconfig
+    # 制御ノードから kubeconfig を取得
+    - name: 制御ノードから kubeconfig を取得
       fetch:
         src: /etc/rancher/k3s/k3s.yaml
-        dest: /tmp/k3s-kubeconfig-{{ inventory_hostname }}.yaml
+        dest: ./kubeconfig.yaml
         flat: yes
+      become: yes
       when: inventory_hostname == "k3s-server-1"
 
-- name: Setup Rancher Server
+- name: Rancher サーバーセットアップ
   hosts: rancher_servers
-  become: yes
-  tasks:
-    - name: Update and upgrade apt
+  vars:
+    # K3s リリース版
+    k3s_release_version: v1.34.1
+    # 単一ノードクラスタ（クラスタリング無効）
+    k3s_build_cluster: false
+    # K3s サーバー設定
+    k3s_server:
+      # デフォルトコンポーネント無効化
+      disable:
+        - servicelb
+        - traefik
+    # Python 3 インタープリタパス
+    ansible_python_interpreter: /usr/bin/python3
+  
+  pre_tasks:
+    # Python がない場合はインストール
+    - name: Python がない場合はブートストラップ
+      raw: |
+        if command -v python3 >/dev/null 2>&1; then
+          exit 0
+        fi
+        sudo apt-get update -y
+        sudo apt-get install -y python3 python3-apt python3-pip
+      changed_when: false
+
+    # APT キャッシュ更新とパッケージ更新
+    - name: APT キャッシュ更新とディストリビューション更新
       apt:
         update_cache: yes
         upgrade: dist
         autoremove: yes
         autoclean: yes
+      become: yes
 
-    - name: Install required packages
+    # 必要なパッケージをインストール（Docker 含む）
+    - name: 必要なパッケージをインストール
       apt:
         name:
           - curl
@@ -133,29 +176,55 @@
           - ntp
           - docker.io
         state: present
+      become: yes
 
-    - name: Set timezone to Asia/Tokyo
+    # タイムゾーンを Asia/Tokyo に設定
+    - name: タイムゾーンを Asia/Tokyo に設定
       timezone:
         name: Asia/Tokyo
+      become: yes
 
-    - name: Start and enable Docker
+    # Docker サービスを開始・有効化
+    - name: Docker サービスを開始・有効化
       systemd:
         name: docker
         enabled: yes
         state: started
+      become: yes
 
-    - name: Install Docker Compose
+    # IP フォワーディング有効化
+    - name: IP フォワーディング有効化
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: "1"
+        sysctl_set: yes
+        state: present
+      become: yes
+
+    # ブリッジネットワーク設定有効化
+    - name: ブリッジネットワーク設定有効化
+      sysctl:
+        name: net.bridge.bridge-nf-call-iptables
+        value: "1"
+        sysctl_set: yes
+        state: present
+      become: yes
+
+    # Rancher を制御ノードに設定
+    - name: Rancher を制御ノードに設定
+      set_fact:
+        k3s_control_node: true
+
+  roles:
+    - role: xanmanning.k3s
+      become: yes
+
+  post_tasks:
+    # K3s が起動完了するまで待機
+    - name: K3s が起動完了するまで待機
       shell: |
-        curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        chmod +x /usr/local/bin/docker-compose
-
-    - name: Disable swap
-      shell: |
-        swapoff -a
-        sed -i '/ swap / s/^/#/' /etc/fstab
-
-    - name: Add rancher user to docker group
-      user:
-        name: ubuntu
-        groups: docker
-        append: yes
+        k3s kubectl get nodes
+      register: k3s_rancher_ready
+      until: k3s_rancher_ready.rc == 0
+      retries: 30
+      delay: 10
