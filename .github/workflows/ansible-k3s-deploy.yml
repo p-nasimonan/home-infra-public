@@ -1,13 +1,5 @@
 name: Ansible K3s Deploy
 
-# ==========================================
-# GitHub Actions ワークフロー: Ansible K3s デプロイ
-# ==========================================
-# 機能:
-#   - ansible-playbook を実行して K3s クラスタをデプロイ
-#   - SSH キーを GitHub Secrets で管理
-#   - SSH Agent を用いたセキュアな鍵管理
-
 on:
   # 手動トリガー
   workflow_dispatch:
