@@ -71,10 +71,11 @@ jobs:
       # ==========================================
       # 4. SSH キーをセットアップ
       # ==========================================
-      - name: SSH Agent をセットアップ
-        uses: webfactory/ssh-agent@v0.8.0
-        with:
-          ssh-private-key: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+      - name: SSH キーをセットアップ
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
 
       # ==========================================
       # 5. Ansible ロール（xanmanning.k3s）をインストール
