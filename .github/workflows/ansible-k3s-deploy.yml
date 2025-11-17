@@ -118,10 +118,9 @@ jobs:
       # ==========================================
       - name: ホストへの接続テスト
         working-directory: ${{ env.ANSIBLE_WORK_DIR }}
-        continue-on-error: true
         run: |
           echo "=== Ping テスト ==="
-          ansible all -i inventory.ini -m ping || true
+          ansible all -i inventory.ini -m ping
 
       # ==========================================
       # 9. ドライラン（検証モード）
