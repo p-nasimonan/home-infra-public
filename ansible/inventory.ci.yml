@@ -1,0 +1,49 @@
+# ==========================================
+# CI用 K3s Cluster Inventory（モック）
+# ==========================================
+# CI環境での構文検証用
+# 実際には localhost に対して検証を行う
+
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: /usr/bin/python3
+
+  children:
+    k3s_servers:
+      hosts:
+        k3s-server-1:
+          ansible_connection: local
+          ansible_python_interpreter: /usr/bin/python3
+          k3s_hostname: k3s-server-1
+          k3s_control_node: true
+        k3s-server-2:
+          ansible_connection: local
+          ansible_python_interpreter: /usr/bin/python3
+          k3s_hostname: k3s-server-2
+          k3s_control_node: true
+        k3s-server-3:
+          ansible_connection: local
+          ansible_python_interpreter: /usr/bin/python3
+          k3s_hostname: k3s-server-3
+          k3s_control_node: true
+
+    rancher_servers:
+      hosts:
+        rancher-server:
+          ansible_connection: local
+          ansible_python_interpreter: /usr/bin/python3
+          k3s_hostname: rancher-server
+          k3s_control_node: false
+
+  vars:
+    # Python interpreter
+    ansible_python_interpreter: /usr/bin/python3
+
+    # Connection settings
+    ansible_connection: local
+    ansible_port: 22
+
+    # Become settings
+    ansible_become: false

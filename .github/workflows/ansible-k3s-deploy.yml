@@ -1,11 +1,19 @@
 name: Ansible K3s Deploy
 
 on:
-  # 手動トリガー
+  # push トリガー（CI用：構文検証のみ）
+  push:
+    branches:
+      - main
+    paths:
+      - 'ansible/**'
+      - '.github/workflows/ansible-k3s-deploy.yml'
+
+  # 手動トリガー（デプロイ実行）
   workflow_dispatch:
     inputs:
       action:
-        description: '実行アクション（デプロイまたは検証）'
+        description: '実行アクション（check=検証、deploy=デプロイ）'
         required: true
         default: 'check'
         type: choice
@@ -13,7 +21,7 @@ on:
           - check
           - deploy
       target_group:
-        description: 'ターゲット（k3s_servers または rancher_servers）'
+        description: 'ターゲット（all、k3s_servers、rancher_servers）'
         required: true
         default: 'all'
         type: choice
@@ -22,41 +30,22 @@ on:
           - k3s_servers
           - rancher_servers
 
-  # push トリガー（ansible ディレクトリに変更があった場合）
-  push:
-    branches:
-      - main
-    paths:
-      - 'ansible/**'
-      - '.github/workflows/ansible-k3s-deploy.yml'
-
 jobs:
   # =========================================
-  # Ansible K3s デプロイジョブ
+  # CI: Ansible 構文検証（push時に自動実行）
   # =========================================
-  ansible-deploy:
-    name: Ansible K3s Deploy on self-hosted runner
-    runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 120
+  ci-validate:
+    name: CI - Ansible Syntax Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     env:
-      # Ansible ディレクトリ設定
       ANSIBLE_WORK_DIR: ./ansible
 
-    defaults:
-      run:
-        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
-
     steps:
-      # ==========================================
-      # 1. リポジトリをチェックアウト
-      # ==========================================
       - name: リポジトリをチェックアウト
         uses: actions/checkout@v4
 
-      # ==========================================
-      # 2. Python をセットアップ
-      # ==========================================
       - name: Python 3.11 をセットアップ
         uses: actions/setup-python@v4
         with:
@@ -64,132 +53,118 @@ jobs:
           cache: 'pip'
           cache-dependency-path: 'ansible/requirements.txt'
 
-      # ==========================================
-      # 3. Python 依存パッケージをインストール
-      # ==========================================
+      - name: Python 依存パッケージをインストール
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ansible ロールをインストール
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+        run: |
+          mkdir -p ./roles
+          ansible-galaxy install -r requirements.yml -p ./roles -f
+          ansible-galaxy list
+
+      - name: Ansible 構文チェック（CI用）
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+        run: |
+          ansible-playbook -i inventory.ci.yml playbook-k3s-setup.yml --syntax-check
+
+      - name: インベントリ検証
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+        run: |
+          ansible-inventory -i inventory.ci.yml --list
+
+  # =========================================
+  # Deploy: Ansible K3s デプロイ（手動実行のみ）
+  # =========================================
+  deploy:
+    name: Deploy - Ansible K3s
+    needs: ci-validate
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 120
+    if: github.event_name == 'workflow_dispatch'
+
+    env:
+      ANSIBLE_WORK_DIR: ./ansible
+
+    defaults:
+      run:
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'ansible/requirements.txt'
+
       - name: Python 依存パッケージをインストール
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ==========================================
-      # 4. SSH キーをセットアップ
-      # ==========================================
       - name: SSH キーをセットアップ
         run: |
-          mkdir -p .ssh
+          mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-      # ==========================================
-      # 4.1 鍵の有効性を確認
-      # ==========================================
-      - name: Check that key is valid
+      - name: SSH 接続テスト
         run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no youkan@192.168.0.20 "echo OK"
+          ssh-keyscan -H 192.168.0.20 >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no youkan@192.168.0.20 "echo '✓ SSH接続成功'"
 
-      # ==========================================
-      # 5. Ansible ロール（xanmanning.k3s）をインストール
-      # ==========================================
       - name: Ansible ロールをインストール
         run: |
-          # roles/ ディレクトリを作成
           mkdir -p ./roles
-          # 依存ロール・コレクションをインストール
           ansible-galaxy install -r requirements.yml -p ./roles -f
-          # インストール確認
-          echo "=== インストール済みロール ==="
           ansible-galaxy list
 
-      # ==========================================
-      # 6. Ansible 構文チェック
-      # ==========================================
       - name: Ansible 構文チェック
-        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
         run: |
           ansible-playbook -i inventory.yml playbook-k3s-setup.yml --syntax-check
 
-      # ==========================================
-      # 7. インベントリの確認
-      # ==========================================
       - name: インベントリのホスト確認
-        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
         run: |
-          echo "=== 全ホスト ==="
           ansible-inventory -i inventory.yml --list
-          echo ""
-          echo "=== k3s_servers グループ ==="
-          ansible-inventory -i inventory.yml -l k3s_servers --list
-          echo ""
-          echo "=== rancher_servers グループ ==="
-          ansible-inventory -i inventory.yml -l rancher_servers --list
 
-      # ==========================================
-      # 8. ホストへのリーチビリティテスト
-      # ==========================================
       - name: ホストへの接続テスト
-        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
         run: |
-          echo "=== Ping テスト ==="
           ansible all -i inventory.yml -m ping
 
-      # ==========================================
-      # 9. ドライラン（検証モード）
-      # ==========================================
       - name: ドライラン実行
-        if: github.event.inputs.action == 'check' || github.event_name == 'push'
+        if: github.event.inputs.action == 'check'
         run: |
-          if [ "${{ github.event.inputs.target_group }}" = "all" ] || [ -z "${{ github.event.inputs.target_group }}" ]; then
-            TARGET=""
-          else
-            TARGET="-l ${{ github.event.inputs.target_group }}"
-          fi
-          
-          ansible-playbook -i inventory.yml playbook-k3s-setup.yml \
-            $TARGET \
-            --check \
-            -v
+          TARGET="${{ github.event.inputs.target_group != 'all' && format('-l {0}', github.event.inputs.target_group) || '' }}"
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml $TARGET --check -v
 
-      # ==========================================
-      # 10. 本番デプロイ実行
-      # ==========================================
       - name: Ansible プレイブック実行（本番デプロイ）
         if: github.event.inputs.action == 'deploy'
         run: |
-          if [ "${{ github.event.inputs.target_group }}" = "all" ] || [ -z "${{ github.event.inputs.target_group }}" ]; then
-            TARGET=""
-          else
-            TARGET="-l ${{ github.event.inputs.target_group }}"
-          fi
-          
-          ansible-playbook -i inventory.yml playbook-k3s-setup.yml \
-            $TARGET \
-            -v
+          TARGET="${{ github.event.inputs.target_group != 'all' && format('-l {0}', github.event.inputs.target_group) || '' }}"
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml $TARGET -v
 
-      # ==========================================
-      # 11. デプロイ完了ログ
-      # ==========================================
       - name: デプロイ結果のサマリー
         if: always()
         run: |
           echo "## Ansible デプロイ実行完了"
-          echo "- **リポジトリ**: ${{ github.repository }}"
-          echo "- **ブランチ**: ${{ github.ref_name }}"
-          echo "- **コミット**: ${{ github.sha }}"
-          echo "- **実行者**: ${{ github.actor }}"
-          echo "- **アクション**: ${{ github.event.inputs.action || 'check (自動実行)' }}"
-          echo "- **対象グループ**: ${{ github.event.inputs.target_group || 'all' }}"
-          echo ""
-          echo "詳細は GitHub Actions のログを参照してください。"
+          echo "- リポジトリ: ${{ github.repository }}"
+          echo "- ブランチ: ${{ github.ref_name }}"
+          echo "- コミット: ${{ github.sha }}"
+          echo "- 実行者: ${{ github.actor }}"
+          echo "- アクション: ${{ github.event.inputs.action }}"
+          echo "- 対象グループ: ${{ github.event.inputs.target_group }}"
 
-  # =========================================
-  # 成功通知（オプション）
-  # =========================================
   notify-success:
-    needs: ansible-deploy
+    needs: deploy
     runs-on: ubuntu-latest
-    if: success()
+    if: success() && github.event_name == 'workflow_dispatch'
     steps:
-      - name: デプロイ成功ログ
-        run: |
-          echo "✅ Ansible K3s デプロイが正常に完了しました"
+      - name: デプロイ成功
+        run: echo "✅ Ansible K3s デプロイ完了"

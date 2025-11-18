@@ -116,7 +116,7 @@
       until: k3s_nodes_ready.rc == 0 and k3s_nodes_ready.stdout_lines | length > 0
       retries: 30
       delay: 10
-      check_mode: false
+
       when: k3s_control_node is defined and k3s_control_node
 
     # 制御ノードから kubeconfig を取得
@@ -126,7 +126,7 @@
         dest: ./kubeconfig.yaml
         flat: yes
       become: yes
-      check_mode: false
+
       when: inventory_hostname == "k3s-server-1"
 
 - name: Rancher サーバーセットアップ
@@ -230,4 +230,4 @@
       until: k3s_rancher_ready.rc == 0
       retries: 30
       delay: 10
-      check_mode: false
+
