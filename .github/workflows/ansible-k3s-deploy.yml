@@ -78,7 +78,7 @@ jobs:
       - name: SSH キーをセットアップ
         run: |
           mkdir -p .ssh
-          printf "%s" "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
       # ==========================================
