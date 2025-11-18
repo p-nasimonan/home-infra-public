@@ -13,8 +13,8 @@
 - name: K3s クラスタセットアップ
   hosts: k3s_servers
   vars:
-    # K3s リリース版
-    k3s_release_version: v1.34.1
+    # K3s リリース版（false で最新安定版を使用）
+    k3s_release_version: false
     # HA クラスタ用 embedded etcd 有効化
     k3s_etcd_datastore: true
     # K3s サーバー設定（制御プレーン）
@@ -130,8 +130,8 @@
 - name: Rancher サーバーセットアップ
   hosts: rancher_servers
   vars:
-    # K3s リリース版
-    k3s_release_version: v1.34.1
+    # K3s リリース版（false で最新安定版を使用）
+    k3s_release_version: false
     # 単一ノードクラスタ（クラスタリング無効）
     k3s_build_cluster: false
     # K3s サーバー設定
