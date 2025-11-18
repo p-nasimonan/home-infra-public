@@ -107,7 +107,7 @@ jobs:
       - name: Ansible 構文チェック
         working-directory: ${{ env.ANSIBLE_WORK_DIR }}
         run: |
-          ansible-playbook -i inventory.ini playbook-k3s-setup.yml --syntax-check
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml --syntax-check
 
       # ==========================================
       # 7. インベントリの確認
@@ -116,13 +116,13 @@ jobs:
         working-directory: ${{ env.ANSIBLE_WORK_DIR }}
         run: |
           echo "=== 全ホスト ==="
-          ansible-inventory -i inventory.ini --list
+          ansible-inventory -i inventory.yml --list
           echo ""
           echo "=== k3s_servers グループ ==="
-          ansible-inventory -i inventory.ini -l k3s_servers --list
+          ansible-inventory -i inventory.yml -l k3s_servers --list
           echo ""
           echo "=== rancher_servers グループ ==="
-          ansible-inventory -i inventory.ini -l rancher_servers --list
+          ansible-inventory -i inventory.yml -l rancher_servers --list
 
       # ==========================================
       # 8. ホストへのリーチビリティテスト
@@ -131,7 +131,7 @@ jobs:
         working-directory: ${{ env.ANSIBLE_WORK_DIR }}
         run: |
           echo "=== Ping テスト ==="
-          ansible all -i inventory.ini -m ping
+          ansible all -i inventory.yml -m ping
 
       # ==========================================
       # 9. ドライラン（検証モード）
@@ -145,7 +145,7 @@ jobs:
             TARGET="-l ${{ github.event.inputs.target_group }}"
           fi
           
-          ansible-playbook -i inventory.ini playbook-k3s-setup.yml \
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml \
             $TARGET \
             --check \
             -v
