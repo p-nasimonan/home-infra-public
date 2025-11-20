@@ -44,13 +44,34 @@
             update_cache: yes
           become: yes
 
-        - name: Python pip パッケージをインストール（bcrypt など）
-          pip:
-            name:
-              - bcrypt>=4.0.0
-              - kubernetes>=21.0.0
-            executable: pip3
+        # Ubuntu 23.04+ PEP 668 対策：仮想環境を使用
+        - name: Python 仮想環境を作成
+          shell: |
+            python3 -m venv /opt/ansible-venv
+          args:
+            executable: /bin/bash
           become: yes
+          changed_when: false
+
+        - name: 仮想環境に pip をアップグレード
+          shell: |
+            /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
+          args:
+            executable: /bin/bash
+          become: yes
+
+        - name: 仮想環境に ArgoCD 用パッケージをインストール
+          shell: |
+            /opt/ansible-venv/bin/pip install \
+              kubernetes>=21.0.0 \
+              bcrypt>=4.0.0
+          args:
+            executable: /bin/bash
+          become: yes
+
+        - name: Python インタープリタを仮想環境に設定
+          set_fact:
+            ansible_python_interpreter: /opt/ansible-venv/bin/python3
 
         # -----------------------------------------------
         # 1. ArgoCD Namespace 作成
