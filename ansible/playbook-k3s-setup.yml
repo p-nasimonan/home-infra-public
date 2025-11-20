@@ -253,6 +253,10 @@
   hosts: rancher_servers
   become: yes
   vars:
+    # ドメイン設定（プライベートアクセス用）
+    # 外部アクセスは Cloudflare Tunnel 経由で rancher.youkan.uk → これに転送
+    rancher_domain: "rancher.youkan.uk"
+
     # Rancher のバージョン (stable 推奨)
     rancher_version: "v2.12.1"
 
@@ -389,9 +393,9 @@
         create_namespace: yes
         chart_version: "{{ rancher_version }}"
         values:
-          # Ingress hostname: プライベートIP のみ使用
+          # Ingress hostname: プライベートアクセス用ドメイン
           # 外部アクセスは Cloudflare Tunnel 経由
-          hostname: "rancher.local"
+          hostname: "{{ rancher_domain }}"
           replicas: 1
           bootstrapPassword: "{{ rancher_bootstrap_password }}"
           ingress:

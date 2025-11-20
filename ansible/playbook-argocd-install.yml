@@ -9,6 +9,10 @@
 - name: Install ArgoCD
   hosts: k3s_servers
   vars:
+    # ドメイン設定（プライベートアクセス用）
+    # 外部アクセスは Cloudflare Tunnel 経由で argocd.youkan.uk → これに転送
+    argocd_domain: "argocd.youkan.uk"
+
     # ArgoCD バージョン
     argocd_version: "v2.11.0"
 
@@ -70,6 +74,37 @@
         - name: Python インタープリタを仮想環境に設定
           set_fact:
             ansible_python_interpreter: /opt/ansible-venv/bin/python3
+
+        # -----------------------------------------------
+        # 0.5. Helm インストール
+        # -----------------------------------------------
+        - name: Helm がインストール済みか確認
+          shell: |
+            which helm
+          args:
+            executable: /bin/bash
+          register: helm_check
+          changed_when: false
+          ignore_errors: yes
+
+        - name: Helm をインストール（未インストール時）
+          shell: |
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          args:
+            executable: /bin/bash
+          become: yes
+          when: helm_check.rc != 0
+
+        - name: Helm バージョン確認
+          shell: helm version --short
+          args:
+            executable: /bin/bash
+          register: helm_version
+          changed_when: false
+
+        - name: Helm バージョン情報を表示
+          debug:
+            msg: "Helm version: {{ helm_version.stdout }}"
 
         # -----------------------------------------------
         # 1. ArgoCD Namespace 作成
@@ -134,17 +169,17 @@
                 service:
                   type: ClusterIP
                 # Ingress 設定
-                # プライベートIP のみ使用
+                # プライベートアクセス用ドメイン
                 # 外部アクセスは Cloudflare Tunnel 経由
                 ingress:
                   enabled: true
                   ingressClassName: traefik
                   hosts:
-                    - "argocd.local"
+                    - "{{ argocd_domain }}"
                   tls:
                     - secretName: argocd-tls
                       hosts:
-                        - "argocd.local"
+                        - "{{ argocd_domain }}"
                 # UI 設定
                 extraArgs:
                   - --insecure  # HTTPS 非対応の場合（Traefik が TLS 終端）
