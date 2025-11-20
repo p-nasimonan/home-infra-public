@@ -246,18 +246,13 @@
 # ==========================================
 # Rancher のインストール (Helm を使用)
 # ==========================================
-# ゼロトラスト化：外部ネットワークのみからアクセス
-# 内部: 192.168.0.30 で直接アクセス廃止
-# 外部: rancher.youkan.uk (Cloudflare Tunnel 経由) のみ
+# プライベートIPのみでアクセス
+# 外部は Cloudflare Tunnel 経由
 # ==========================================
 - name: Deploy Rancher on k3s
   hosts: rancher_servers
   become: yes
   vars:
-    # ゼロトラスト: 外部 FQDN のみを使用
-    # （内部 IP でのアクセスは許可しない）
-    rancher_hostname: "rancher.youkan.uk"
-
     # Rancher のバージョン (stable 推奨)
     rancher_version: "v2.12.1"
 
@@ -394,7 +389,9 @@
         create_namespace: yes
         chart_version: "{{ rancher_version }}"
         values:
-          hostname: "{{ rancher_hostname }}"
+          # Ingress hostname: プライベートIP のみ使用
+          # 外部アクセスは Cloudflare Tunnel 経由
+          hostname: "rancher.local"
           replicas: 1
           bootstrapPassword: "{{ rancher_bootstrap_password }}"
           ingress:
@@ -419,37 +416,6 @@
       until: rancher_replicas.stdout | int > 0
       retries: 30
       delay: 10
-
-    - name: Rancher インストール完了メッセージを表示
-      debug:
-        msg: |
-          🎉 Rancher がインストールされました！
-          
-          【ゼロトラスト：外部ネットワークのみからアクセス】
-          
-          URL: https://{{ rancher_hostname }}
-          
-          接続フロー：
-          1. ユーザー → https://rancher.youkan.uk
-          2. Cloudflare Tunnel
-          3. → 192.168.0.30 (K3s Rancher)
-          
-          【初回ログイン】
-          Username: admin
-          Password: {{ rancher_bootstrap_password }}
-          
-          【Cloudflare Tunnel 設定】
-          すでにトンネルが設定されている場合:
-          - Domain: rancher.youkan.uk
-          - Service: https://rancher.youkan.uk
-          
-          未設定の場合は cloudflared CLI で:
-          cloudflared tunnel route dns <tunnel-name> rancher.youkan.uk
-          
-          【重要】
-          ⚠️ 内部ネットワーク (192.168.0.30) でのアクセスは許可されていません
-          ⚠️ 外部 FQDN (rancher.youkan.uk) 経由のみの接続がサポートされています
-          ⚠️ これはゼロトラスト セキュリティモデルの実装です
 
 # ==========================================
 # 次のステップ: ArgoCD をインストール

@@ -112,22 +112,28 @@ spec:
   revisionHistoryLimit: 10
 
 # ========================================
-# 【注意】
+# 【アーキテクチャ】
 # ========================================
-# Helm Values 内の {{ VARIABLE }} は、
-# GitHub Actions で実行される際に環境変数で置換されます：
+# 内部（プライベートIP）:
+#   - rancher.local → 192.168.0.30
+#   - argocd.local → 192.168.0.20（K3s サーバーのいずれか）
 #
-# ansible-playbook ... \
-#   -e "cf_api_token=xxx" \
-#   -e "cf_account_id=yyy" \
-#   -e "cf_tunnel_name=zzz"
+# 外部（Cloudflare Tunnel）:
+#   - rancher.youkan.uk → localhost:443 → Ingress → rancher.local
+#   - argocd.youkan.uk → localhost:443 → Ingress → argocd.local
 #
-# または Kubernetes Secret から参照する場合:
+# ========================================
+# 【セットアップ手順】
+# ========================================
+# 1. cloudflared tunnel を作成（一度だけ）:
+#    cloudflared tunnel create k3s-rancher
 #
-# helm:
-#   valuesObject:
-#     cloudflare:
-#       apiToken:
-#         secretKeyRef:
-#           name: cloudflare-credentials
-#           key: apiToken
+# 2. DNS ルーティングを設定:
+#    cloudflared tunnel route dns k3s-rancher rancher.youkan.uk
+#    cloudflared tunnel route dns k3s-rancher argocd.youkan.uk
+#
+# 3. Ingress 設定で .local ドメインをマッピング
+#    このコントローラーが自動的に Cloudflare に登録します
+#
+# ========================================
+# ========================================

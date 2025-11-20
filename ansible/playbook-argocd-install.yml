@@ -3,16 +3,14 @@
 # ArgoCD のインストール
 # ==========================================
 # GitOps ベースの CD ツール
-# Kubernetes Ingress で管理されたアプリケーション自動デプロイ
+# プライベートIPでアクセス
+# 外部は Cloudflare Tunnel 経由
 # ==========================================
 - name: Install ArgoCD
   hosts: k3s_servers
   vars:
     # ArgoCD バージョン
     argocd_version: "v2.11.0"
-
-    # ArgoCD UI アクセス用ホスト名
-    argocd_hostname: "argocd.youkan.uk"
 
     # ArgoCD namespace
     argocd_namespace: "argocd"
@@ -101,6 +99,28 @@
         # -----------------------------------------------
         # 3. ArgoCD をインストール
         # -----------------------------------------------
+        - name: Helm リポジトリリストを表示（デバッグ）
+          shell: helm repo list
+          args:
+            executable: /bin/bash
+          register: helm_repos
+          changed_when: false
+
+        - name: Helm リポジトリリストを出力
+          debug:
+            msg: "{{ helm_repos.stdout }}"
+
+        - name: ArgoCD chart 検索
+          shell: helm search repo argo/argo-cd
+          args:
+            executable: /bin/bash
+          register: argocd_search
+          changed_when: false
+
+        - name: ArgoCD chart 検索結果を出力
+          debug:
+            msg: "{{ argocd_search.stdout }}"
+
         - name: ArgoCD をインストール（Helm）
           kubernetes.core.helm:
             name: argocd
@@ -114,15 +134,17 @@
                 service:
                   type: ClusterIP
                 # Ingress 設定
+                # プライベートIP のみ使用
+                # 外部アクセスは Cloudflare Tunnel 経由
                 ingress:
                   enabled: true
                   ingressClassName: traefik
                   hosts:
-                    - "{{ argocd_hostname }}"
+                    - "argocd.local"
                   tls:
                     - secretName: argocd-tls
                       hosts:
-                        - "{{ argocd_hostname }}"
+                        - "argocd.local"
                 # UI 設定
                 extraArgs:
                   - --insecure  # HTTPS 非対応の場合（Traefik が TLS 終端）
@@ -167,6 +189,36 @@
             kubeconfig: /etc/rancher/k3s/k3s.yaml
             wait: yes
             wait_timeout: 15m
+          register: argocd_install_result
+          ignore_errors: yes
+
+        - name: ArgoCD インストール結果を表示
+          debug:
+            msg: "{{ argocd_install_result }}"
+
+        - name: Helm release 状態確認
+          shell: helm list -n {{ argocd_namespace }}
+          args:
+            executable: /bin/bash
+          register: helm_list
+          changed_when: false
+
+        - name: Helm release リストを表示
+          debug:
+            msg: "{{ helm_list.stdout }}"
+
+        - name: K8s リソース確認
+          shell: kubectl get all -n {{ argocd_namespace }}
+          args:
+            executable: /bin/bash
+          environment:
+            KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+          register: k8s_resources
+          changed_when: false
+
+        - name: K8s リソースリストを表示
+          debug:
+            msg: "{{ k8s_resources.stdout }}"
 
         # -----------------------------------------------
         # 4. ArgoCD Secret 設定（admin password）
@@ -218,40 +270,7 @@
             KUBECONFIG: /etc/rancher/k3s/k3s.yaml
           register: argocd_pods
 
-        - name: ArgoCD インストール完了メッセージ
-          debug:
-            msg: |
-              ✅ ArgoCD がインストールされました！
 
-              【アクセス情報】
-              - UI: https://{{ argocd_hostname }}
-              - Namespace: {{ argocd_namespace }}
-              - バージョン: {{ argocd_version }}
-
-              【初回ログイン】
-              Username: admin
-              Password: {{ argocd_admin_password }}
-
-              【CLI ログイン】
-              argocd login {{ argocd_hostname }} \
-                --username admin \
-                --password '{{ argocd_admin_password }}'
-
-              【Cloudflare Tunnel DNS 設定】
-              cloudflared tunnel route dns k3s-rancher {{ argocd_hostname }}
-
-              【ArgoCD CLI インストール】
-              curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/download/{{ argocd_version }}/argocd-linux-amd64
-              chmod +x argocd
-              sudo mv argocd /usr/local/bin/
-
-              【次のステップ】
-              1. argocd login コマンドでログイン
-              2. Git リポジトリを repository として登録
-              3. Application リソースを作成（GitOps）
-
-              【ポッド情報】
-              {{ argocd_pods.stdout }}
 
       when: inventory_hostname == "k3s-server-1"
 
@@ -288,50 +307,5 @@
     # -----------------------------------------------
     # 7. 次のステップ: Git リポジトリ登録とアプリケーション管理
     # -----------------------------------------------
-    - name: ArgoCD セットアップ完了メッセージ
-      debug:
-        msg: |
-          ✅ ArgoCD セットアップ完了！
 
-          【次のステップ】
-
-          【1. ArgoCD UI にログイン】
-          URL: https://{{ argocd_hostname }}
-          Username: admin
-          Password: {{ argocd_admin_password }}
-
-          【2. Git リポジトリを登録】
-          # 公開リポジトリの場合
-          argocd repo add https://github.com/youkan0124/home-infra \
-            --type git
-
-          # または UI から: Settings → Repositories → CONNECT REPO
-
-          【3. App of Apps を設定】
-          # applications/app-of-apps.yaml を kubectl apply
-          kubectl apply -f applications/app-of-apps.yaml
-
-          # または
-          argocd app create app-of-apps \
-            --repo https://github.com/youkan0124/home-infra \
-            --path applications \
-            --dest-server https://kubernetes.default.svc \
-            --dest-namespace argocd
-
-          【4. 動作確認】
-          # Application 一覧表示
-          kubectl get applications -n argocd
-
-          # App of Apps が Synced になるまで待つ
-          watch kubectl get application app-of-apps -n argocd
-
-          【5. アプリケーション追加】
-          # applications/ に新しい Application.yaml を作成
-          # git push すると自動デプロイされます
-
-          例：
-          applications/prometheus/application.yaml
-          applications/grafana/application.yaml
-
-      when: inventory_hostname == "k3s-server-1"
 
