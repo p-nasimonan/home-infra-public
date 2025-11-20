@@ -360,7 +360,7 @@
         chart_ref: jetstack/cert-manager
         release_namespace: cert-manager
         create_namespace: yes
-        version: "{{ cert_manager_version }}"
+        chart_version: "{{ cert_manager_version }}"
         values:
           installCRDs: true
         kubeconfig: /etc/rancher/k3s/k3s.yaml
@@ -392,7 +392,7 @@
         chart_ref: rancher-latest/rancher
         release_namespace: cattle-system
         create_namespace: yes
-        version: "{{ rancher_version }}"
+        chart_version: "{{ rancher_version }}"
         values:
           hostname: "{{ rancher_hostname }}"
           replicas: 1
