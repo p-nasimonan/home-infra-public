@@ -19,11 +19,6 @@
     k3s_etcd_datastore: true
     # K3s サーバー設定（制御プレーン）
     k3s_server:
-      # Ingress Controller (traefik) を有効化
-      # Rancher / Helm apps のアクセスに必須
-      disable:
-        - servicelb
-        # traefik は有効（Rancher ingress に必須）
       # Flannel バックエンド設定
       flannel-backend: vxlan
       # API サーバー監査ログ設定
@@ -148,11 +143,6 @@
     k3s_build_cluster: false
     # K3s サーバー設定
     k3s_server:
-      # Ingress Controller (traefik) を有効化
-      # Rancher のアクセスに必須
-      disable:
-        - servicelb
-        # traefik は有効（Rancher ingress に必須）
     # Python 3 インタープリタパス
     ansible_python_interpreter: /usr/bin/python3
   
