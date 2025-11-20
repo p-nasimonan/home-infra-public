@@ -88,6 +88,14 @@
         state: present
       become: yes
 
+    # ブリッジ iptables サポート用カーネルモジュールロード
+    - name: br_netfilter モジュールをロード
+      modprobe:
+        name: br_netfilter
+        state: present
+      become: yes
+      ignore_errors: yes
+
     # ブリッジネットワーク設定有効化
     - name: ブリッジネットワーク設定有効化
       sysctl:
@@ -96,6 +104,7 @@
         sysctl_set: yes
         state: present
       become: yes
+      ignore_errors: yes
 
     # k3s-server-1 を制御ノードに設定
     - name: k3s-server-1 を制御ノードに設定
@@ -203,6 +212,14 @@
         state: present
       become: yes
 
+    # ブリッジ iptables サポート用カーネルモジュールロード
+    - name: br_netfilter モジュールをロード
+      modprobe:
+        name: br_netfilter
+        state: present
+      become: yes
+      ignore_errors: yes
+
     # ブリッジネットワーク設定有効化
     - name: ブリッジネットワーク設定有効化
       sysctl:
@@ -211,6 +228,7 @@
         sysctl_set: yes
         state: present
       become: yes
+      ignore_errors: yes
 
     # Rancher を制御ノードに設定
     - name: Rancher を制御ノードに設定
