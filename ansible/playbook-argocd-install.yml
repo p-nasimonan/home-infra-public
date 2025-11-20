@@ -1,0 +1,295 @@
+---
+# ==========================================
+# ArgoCD のインストール
+# ==========================================
+# GitOps ベースの CD ツール
+# Kubernetes Ingress で管理されたアプリケーション自動デプロイ
+# ==========================================
+- name: Install ArgoCD
+  hosts: k3s_servers
+  vars:
+    # ArgoCD バージョン
+    argocd_version: "v2.11.0"
+
+    # ArgoCD UI アクセス用ホスト名
+    argocd_hostname: "argocd.youkan.uk"
+
+    # ArgoCD namespace
+    argocd_namespace: "argocd"
+
+    # ArgoCD admin password（GitHub Actions Secret から）
+    argocd_admin_password: "{{ argocd_password }}"
+
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+  tasks:
+    # 実行を最初のサーバーのみに限定
+    - name: ArgoCD インストール（制御ノードのみ）
+      block:
+        - name: Python 3 インタープリタ設定
+          set_fact:
+            ansible_python_interpreter: /usr/bin/python3
+
+        # -----------------------------------------------
+        # 1. ArgoCD Namespace 作成
+        # -----------------------------------------------
+        - name: ArgoCD namespace を作成
+          kubernetes.core.k8s:
+            name: "{{ argocd_namespace }}"
+            api_version: v1
+            kind: Namespace
+            state: present
+            kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+        # -----------------------------------------------
+        # 2. ArgoCD Helm リポジトリ追加
+        # -----------------------------------------------
+        - name: ArgoCD Helm リポジトリを追加
+          kubernetes.core.helm_repository:
+            name: argo
+            repo_url: "https://argoproj.github.io/argo-helm"
+            kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+        - name: Helm リポジトリ更新
+          shell: helm repo update
+          args:
+            executable: /bin/bash
+
+        # -----------------------------------------------
+        # 3. ArgoCD をインストール
+        # -----------------------------------------------
+        - name: ArgoCD をインストール（Helm）
+          kubernetes.core.helm:
+            name: argocd
+            chart_ref: argo/argo-cd
+            release_namespace: "{{ argocd_namespace }}"
+            create_namespace: yes
+            version: "{{ argocd_version }}"
+            values:
+              # ArgoCD サーバー設定
+              server:
+                service:
+                  type: ClusterIP
+                # Ingress 設定
+                ingress:
+                  enabled: true
+                  ingressClassName: traefik
+                  hosts:
+                    - "{{ argocd_hostname }}"
+                  tls:
+                    - secretName: argocd-tls
+                      hosts:
+                        - "{{ argocd_hostname }}"
+                # UI 設定
+                extraArgs:
+                  - --insecure  # HTTPS 非対応の場合（Traefik が TLS 終端）
+
+              # ArgoCD コントローラー設定
+              controller:
+                replicas: 1
+                resources:
+                  limits:
+                    cpu: 500m
+                    memory: 512Mi
+                  requests:
+                    cpu: 250m
+                    memory: 256Mi
+
+              # ArgoCD Repository Server 設定
+              repoServer:
+                replicas: 1
+                resources:
+                  limits:
+                    cpu: 300m
+                    memory: 384Mi
+                  requests:
+                    cpu: 150m
+                    memory: 192Mi
+
+              # ArgoCD Redis 設定
+              redis:
+                resources:
+                  limits:
+                    cpu: 100m
+                    memory: 128Mi
+                  requests:
+                    cpu: 50m
+                    memory: 64Mi
+
+              # App of Apps パターン有効化
+              configs:
+                params:
+                  application.instanceLabelKey: argocd.argoproj.io/instance
+
+            kubeconfig: /etc/rancher/k3s/k3s.yaml
+            wait: yes
+            wait_timeout: 15m
+
+        # -----------------------------------------------
+        # 4. ArgoCD Secret 設定（admin password）
+        # -----------------------------------------------
+        - name: ArgoCD admin password ハッシュを生成
+          shell: |
+            # ArgoCD password hashing（bcrypt）
+            python3 << 'EOF'
+            import bcrypt
+            password = "{{ argocd_admin_password }}".encode('utf-8')
+            hashed = bcrypt.hashpw(password, bcrypt.gensalt(rounds=12))
+            print(hashed.decode('utf-8'))
+            EOF
+          register: argocd_password_hash
+          changed_when: false
+
+        - name: ArgoCD admin password を更新
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: argocd-secret
+                namespace: "{{ argocd_namespace }}"
+              type: Opaque
+              stringData:
+                admin.password: "{{ argocd_password_hash.stdout }}"
+            kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+        # -----------------------------------------------
+        # 5. ArgoCD デプロイ確認
+        # -----------------------------------------------
+        - name: ArgoCD コンポーネントが起動するまで待機
+          shell: |
+            kubectl get pods -n {{ argocd_namespace }} -l app.kubernetes.io/name=argocd-server \
+              -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotReady"
+          environment:
+            KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+          register: argocd_ready
+          until: argocd_ready.stdout == "Running"
+          retries: 30
+          delay: 10
+
+        - name: ArgoCD ポッド一覧を表示
+          shell: |
+            kubectl get pods -n {{ argocd_namespace }}
+          environment:
+            KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+          register: argocd_pods
+
+        - name: ArgoCD インストール完了メッセージ
+          debug:
+            msg: |
+              ✅ ArgoCD がインストールされました！
+
+              【アクセス情報】
+              - UI: https://{{ argocd_hostname }}
+              - Namespace: {{ argocd_namespace }}
+              - バージョン: {{ argocd_version }}
+
+              【初回ログイン】
+              Username: admin
+              Password: {{ argocd_admin_password }}
+
+              【CLI ログイン】
+              argocd login {{ argocd_hostname }} \
+                --username admin \
+                --password '{{ argocd_admin_password }}'
+
+              【Cloudflare Tunnel DNS 設定】
+              cloudflared tunnel route dns k3s-rancher {{ argocd_hostname }}
+
+              【ArgoCD CLI インストール】
+              curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/download/{{ argocd_version }}/argocd-linux-amd64
+              chmod +x argocd
+              sudo mv argocd /usr/local/bin/
+
+              【次のステップ】
+              1. argocd login コマンドでログイン
+              2. Git リポジトリを repository として登録
+              3. Application リソースを作成（GitOps）
+
+              【ポッド情報】
+              {{ argocd_pods.stdout }}
+
+      when: inventory_hostname == "k3s-server-1"
+
+    # -----------------------------------------------
+    # 6. ArgoCD CLI 設定（オプション）
+    # -----------------------------------------------
+    - name: ArgoCD CLI をインストール（全ノード）
+      block:
+        - name: ArgoCD CLI バイナリをダウンロード
+          shell: |
+            ARGOCD_VERSION="{{ argocd_version }}"
+            curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64
+            chmod +x /tmp/argocd
+          args:
+            executable: /bin/bash
+
+        - name: ArgoCD CLI をシステムパスに配置
+          shell: sudo mv /tmp/argocd /usr/local/bin/argocd
+          args:
+            executable: /bin/bash
+
+        - name: ArgoCD CLI バージョン確認
+          shell: argocd version --short
+          register: argocd_cli_version
+          changed_when: false
+
+        - name: ArgoCD CLI バージョン情報を表示
+          debug:
+            msg: "ArgoCD CLI: {{ argocd_cli_version.stdout }}"
+
+      when: inventory_hostname == "k3s-server-1"
+      ignore_errors: yes  # CLI インストール失敗時もスキップ
+
+    # -----------------------------------------------
+    # 7. 次のステップ: Git リポジトリ登録とアプリケーション管理
+    # -----------------------------------------------
+    - name: ArgoCD セットアップ完了メッセージ
+      debug:
+        msg: |
+          ✅ ArgoCD セットアップ完了！
+
+          【次のステップ】
+
+          【1. ArgoCD UI にログイン】
+          URL: https://{{ argocd_hostname }}
+          Username: admin
+          Password: {{ argocd_admin_password }}
+
+          【2. Git リポジトリを登録】
+          # 公開リポジトリの場合
+          argocd repo add https://github.com/youkan0124/home-infra \
+            --type git
+
+          # または UI から: Settings → Repositories → CONNECT REPO
+
+          【3. App of Apps を設定】
+          # applications/app-of-apps.yaml を kubectl apply
+          kubectl apply -f applications/app-of-apps.yaml
+
+          # または
+          argocd app create app-of-apps \
+            --repo https://github.com/youkan0124/home-infra \
+            --path applications \
+            --dest-server https://kubernetes.default.svc \
+            --dest-namespace argocd
+
+          【4. 動作確認】
+          # Application 一覧表示
+          kubectl get applications -n argocd
+
+          # App of Apps が Synced になるまで待つ
+          watch kubectl get application app-of-apps -n argocd
+
+          【5. アプリケーション追加】
+          # applications/ に新しい Application.yaml を作成
+          # git push すると自動デプロイされます
+
+          例：
+          applications/prometheus/application.yaml
+          applications/grafana/application.yaml
+
+      when: inventory_hostname == "k3s-server-1"
+

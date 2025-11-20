@@ -1,0 +1,133 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cloudflare-tunnel-ingress-controller
+  namespace: argocd
+  # Finalizer: Application 削除時に関連リソースも削除
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # ArgoCD Project（アクセス制御・リソース制限）
+  project: default
+
+  # ========================================
+  # ソース設定: どこからデプロイするか
+  # ========================================
+  source:
+    # Helm チャートリポジトリ
+    repoURL: https://helm.strrl.dev
+
+    # チャート名
+    chart: cloudflare-tunnel-ingress-controller
+
+    # チャートのバージョン・タグ
+    targetRevision: "0.0.21"
+
+    # Helm Values（設定）
+    helm:
+      releaseName: cloudflare-tunnel-ingress-controller
+      
+      # Values オブジェクト形式
+      valuesObject:
+        # Cloudflare 認証情報
+        # ※ GitHub Actions Secret から渡される
+        cloudflare:
+          apiToken: "{{ CLOUDFLARE_API_TOKEN }}"
+          accountId: "{{ CLOUDFLARE_ACCOUNT_ID }}"
+          tunnelName: "{{ CLOUDFLARE_TUNNEL_NAME }}"
+        
+        # コントローラー設定
+        controller:
+          # Docker イメージ
+          image:
+            repository: strrl/cloudflare-tunnel-ingress-controller
+            tag: "0.0.21"
+            pullPolicy: IfNotPresent
+
+          # レプリカ数
+          replicas: 1
+
+          # リソース制限
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+
+          # Liveness/Readiness Probe（ヘルスチェック）
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+  # ========================================
+  # デスティネーション: どこにデプロイするか
+  # ========================================
+  destination:
+    # クラスタサーバー（ローカルクラスタ）
+    server: https://kubernetes.default.svc
+
+    # デプロイ先 Namespace
+    namespace: cloudflare-tunnel-ingress
+
+  # ========================================
+  # 同期ポリシー: 自動同期設定（GitOps）
+  # ========================================
+  syncPolicy:
+    # 自動同期を有効化
+    automated:
+      # Out-of-sync リソースの自動削除
+      # Git に存在しないリソースを自動削除するかどうか
+      prune: true
+
+      # Self Heal: クラスタの手動変更を自動修正
+      # 誰かが kubectl でリソースを編集した場合、Git の状態に戻す
+      selfHeal: true
+
+    # 同期オプション
+    syncOptions:
+      # Namespace が存在しなければ自動作成
+      - CreateNamespace=true
+
+      # Server-Side Apply を使用（複数 Application での競合回避）
+      - ServerSideApply=true
+
+      # .metadata.generation による差分検出を無視（YAML 形式の差を許容）
+      - RespectIgnoreDifferences=true
+
+  # ========================================
+  # リビジョン履歴（オプション）
+  # ========================================
+  revisionHistoryLimit: 10
+
+# ========================================
+# 【注意】
+# ========================================
+# Helm Values 内の {{ VARIABLE }} は、
+# GitHub Actions で実行される際に環境変数で置換されます：
+#
+# ansible-playbook ... \
+#   -e "cf_api_token=xxx" \
+#   -e "cf_account_id=yyy" \
+#   -e "cf_tunnel_name=zzz"
+#
+# または Kubernetes Secret から参照する場合:
+#
+# helm:
+#   valuesObject:
+#     cloudflare:
+#       apiToken:
+#         secretKeyRef:
+#           name: cloudflare-credentials
+#           key: apiToken

@@ -1,0 +1,59 @@
+---
+# ==========================================
+# ArgoCD App of Apps パターン
+# ==========================================
+# すべてのアプリケーションを一括管理
+# Git にコミットされた Application が自動同期される
+# ==========================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-apps
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # ========================================
+  # ソース設定: Git リポジトリから Application を読む
+  # ========================================
+  project: default
+  
+  source:
+    # このリポジトリから読む
+    repoURL: https://github.com/youkan0124/home-infra
+    path: applications
+    targetRevision: main
+    
+    # Kustomize でマージ（複数ファイル統合）
+    plugin:
+      name: kustomize
+
+  # ========================================
+  # デスティネーション
+  # ========================================
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  # ========================================
+  # 同期ポリシー（完全自動）
+  # ========================================
+  syncPolicy:
+    automated:
+      prune: true      # 削除されたアプリを自動削除
+      selfHeal: true   # 手動変更を Git に合わせて修正
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+
+# ==========================================
+# 【使い方】
+# ==========================================
+# 1. applications/ に新しい Application を追加
+# 2. git push
+# 3. ArgoCD が自動同期
+#
+# 例：
+# applications/prometheus/application.yaml → 自動デプロイ
+# applications/grafana/application.yaml → 自動デプロイ
+# ==========================================

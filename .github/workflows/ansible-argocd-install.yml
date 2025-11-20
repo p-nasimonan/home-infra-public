@@ -1,0 +1,129 @@
+name: Ansible ArgoCD Install
+
+# ==========================================
+# トリガー
+# ==========================================
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: '実行アクション（check=検証、deploy=デプロイ）'
+        required: true
+        default: 'check'
+        type: choice
+        options:
+          - check
+          - deploy
+
+jobs:
+  # =========================================
+  # CI: Ansible 構文検証
+  # =========================================
+  ci-validate:
+    name: CI - Ansible Syntax Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Python 依存パッケージをインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible kubernetes pyyaml
+
+      - name: Ansible ロールをインストール
+        working-directory: ansible
+        run: |
+          mkdir -p ./roles
+          ansible-galaxy install -r requirements.yml -p ./roles -f
+          ansible-galaxy list
+
+      - name: Ansible 構文チェック
+        working-directory: ansible
+        run: |
+          ansible-playbook -i inventory.ci.yml playbook-argocd-install.yml --syntax-check
+
+  # =========================================
+  # Deploy: ArgoCD インストール
+  # =========================================
+  deploy:
+    name: Deploy - ArgoCD Install
+    needs: ci-validate
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    if: github.event.inputs.action == 'deploy'
+
+    defaults:
+      run:
+        working-directory: ansible
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Python 依存パッケージをインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible kubernetes pyyaml bcrypt
+
+      - name: SSH キーをセットアップ
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: SSH 接続テスト
+        run: |
+          ssh-keyscan -H 192.168.0.20 >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no youkan@192.168.0.20 "echo '✓ SSH接続成功'"
+
+      - name: Ansible ロールをインストール
+        run: |
+          mkdir -p ./roles
+          ansible-galaxy install -r requirements.yml -p ./roles -f
+
+      - name: Ansible 構文チェック
+        run: |
+          ansible-playbook -i inventory.yml playbook-argocd-install.yml --syntax-check
+
+      - name: ホストへの接続テスト
+        run: |
+          ansible all -i inventory.yml -m ping
+
+      - name: ドライラン実行（検証）
+        if: github.event.inputs.action == 'check'
+        run: |
+          ansible-playbook -i inventory.yml playbook-argocd-install.yml --check -v
+
+      - name: ArgoCD インストール（本番）
+        if: github.event.inputs.action == 'deploy'
+        env:
+          ARGOCD_PASSWORD: ${{ secrets.ARGOCD_PASSWORD }}
+        run: |
+          ansible-playbook -i inventory.yml playbook-argocd-install.yml -v \
+            -e "argocd_password=${ARGOCD_PASSWORD}"
+
+      - name: 実行完了
+        if: always()
+        run: |
+          echo "## ArgoCD インストール完了"
+          echo "- URL: https://argocd.youkan.uk"
+          echo "- Username: admin"
+          echo ""
+          echo "【次のステップ】"
+          echo "1. ArgoCD UI にログイン"
+          echo "2. Git repository を登録"
+          echo "3. applications/app-of-apps.yaml を kubectl apply"
