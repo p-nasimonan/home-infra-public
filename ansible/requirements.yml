@@ -9,6 +9,8 @@ collections:
     version: ">=5.0.0"
   - name: ansible.posix
     version: ">=1.3.0"
+  - name: kubernetes.core
+    version: ">=2.4.0"
 
 roles:
   - name: xanmanning.k3s

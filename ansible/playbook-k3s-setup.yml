@@ -19,10 +19,11 @@
     k3s_etcd_datastore: true
     # K3s サーバー設定（制御プレーン）
     k3s_server:
-      # デフォルトコンポーネント無効化
+      # Ingress Controller (traefik) を有効化
+      # Rancher / Helm apps のアクセスに必須
       disable:
         - servicelb
-        - traefik
+        # traefik は有効（Rancher ingress に必須）
       # Flannel バックエンド設定
       flannel-backend: vxlan
       # API サーバー監査ログ設定
@@ -147,10 +148,11 @@
     k3s_build_cluster: false
     # K3s サーバー設定
     k3s_server:
-      # デフォルトコンポーネント無効化
+      # Ingress Controller (traefik) を有効化
+      # Rancher のアクセスに必須
       disable:
         - servicelb
-        - traefik
+        # traefik は有効（Rancher ingress に必須）
     # Python 3 インタープリタパス
     ansible_python_interpreter: /usr/bin/python3
   
@@ -193,14 +195,6 @@
     - name: タイムゾーンを Asia/Tokyo に設定
       timezone:
         name: Asia/Tokyo
-      become: yes
-
-    # containerd サービスを開始・有効化
-    - name: containerd サービスを開始・有効化
-      systemd:
-        name: containerd
-        enabled: yes
-        state: started
       become: yes
 
     # IP フォワーディング有効化
@@ -249,3 +243,182 @@
       retries: 30
       delay: 10
 
+# ==========================================
+# Rancher のインストール (Helm を使用)
+# ==========================================
+# ゼロトラスト化：外部ネットワークのみからアクセス
+# 内部: 192.168.0.30 で直接アクセス廃止
+# 外部: rancher.youkan.uk (Cloudflare Tunnel 経由) のみ
+# ==========================================
+- name: Deploy Rancher on k3s
+  hosts: rancher_servers
+  become: yes
+  vars:
+    # ゼロトラスト: 外部 FQDN のみを使用
+    # （内部 IP でのアクセスは許可しない）
+    rancher_hostname: "rancher.youkan.uk"
+
+    # Rancher のバージョン (stable 推奨)
+    rancher_version: "v2.12.1"
+
+    # cert-manager のバージョン
+    cert_manager_version: "v1.15.3"
+
+    # Rancher ブートストラップパスワード（GitHub Actions Secret から）
+    rancher_bootstrap_password: "{{ rancher_password | default('RancherAdmin2024!') }}"
+
+  # k3s の管理者権限で実行するための環境変数
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+  tasks:
+    # Python 3 インタープリタ設定
+    - name: Python3 インタープリタ設定の確認
+      set_fact:
+        ansible_python_interpreter: /usr/bin/python3
+
+    # -----------------------------------------------
+    # 1. 下準備: 必要なツール・ライブラリのインストール
+    # -----------------------------------------------
+    - name: Ansible k8s モジュール用 Python 依存パッケージをインストール
+      pip:
+        name:
+          - kubernetes>=21.0.0
+          - pyyaml>=5.4.1
+        state: present
+        executable: pip3
+
+    - name: Helm インストール (未インストール時)
+      shell: |
+        if ! command -v helm >/dev/null 2>&1; then
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Helm バージョン確認
+      shell: helm version --short
+      register: helm_version
+      changed_when: false
+
+    - name: Helm version 情報を表示
+      debug:
+        msg: "{{ helm_version.stdout }}"
+
+    # -----------------------------------------------
+    # 2. Cert-Manager のインストール (Rancher 必須要件)
+    # -----------------------------------------------
+    - name: Jetstack Helm リポジトリを追加
+      kubernetes.core.helm_repository:
+        name: jetstack
+        repo_url: "https://charts.jetstack.io"
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+    - name: Helm リポジトリ更新
+      shell: helm repo update
+      args:
+        executable: /bin/bash
+
+    - name: cert-manager をインストール
+      kubernetes.core.helm:
+        name: cert-manager
+        chart_ref: jetstack/cert-manager
+        release_namespace: cert-manager
+        create_namespace: yes
+        version: "{{ cert_manager_version }}"
+        values:
+          installCRDs: true
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        wait: yes
+        wait_timeout: 10m
+
+    - name: Cert-manager が起動するまで待機
+      shell: |
+        kubectl get deployment -n cert-manager cert-manager -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: cert_manager_replicas
+      until: cert_manager_replicas.stdout | int > 0
+      retries: 30
+      delay: 10
+
+    # -----------------------------------------------
+    # 3. Rancher 本体のインストール
+    # -----------------------------------------------
+    - name: Rancher Helm リポジトリを追加
+      kubernetes.core.helm_repository:
+        name: rancher-latest
+        repo_url: "https://releases.rancher.com/server-charts/latest"
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+    - name: Rancher Server をインストール
+      kubernetes.core.helm:
+        name: rancher
+        chart_ref: rancher-latest/rancher
+        release_namespace: cattle-system
+        create_namespace: yes
+        version: "{{ rancher_version }}"
+        values:
+          hostname: "{{ rancher_hostname }}"
+          replicas: 1
+          bootstrapPassword: "{{ rancher_bootstrap_password }}"
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            tls:
+              source: letsEncrypt
+              certManagerIssuer: letsencrypt-prod
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        wait: yes
+        wait_timeout: 15m
+
+    # -----------------------------------------------
+    # 4. Rancher 起動確認
+    # -----------------------------------------------
+    - name: Rancher deployment が起動するまで待機
+      shell: |
+        kubectl get deployment -n cattle-system rancher -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: rancher_replicas
+      until: rancher_replicas.stdout | int > 0
+      retries: 30
+      delay: 10
+
+    - name: Rancher インストール完了メッセージを表示
+      debug:
+        msg: |
+          🎉 Rancher がインストールされました！
+          
+          【ゼロトラスト：外部ネットワークのみからアクセス】
+          
+          URL: https://{{ rancher_hostname }}
+          
+          接続フロー：
+          1. ユーザー → https://rancher.youkan.uk
+          2. Cloudflare Tunnel
+          3. → 192.168.0.30 (K3s Rancher)
+          
+          【初回ログイン】
+          Username: admin
+          Password: {{ rancher_bootstrap_password }}
+          
+          【Cloudflare Tunnel 設定】
+          すでにトンネルが設定されている場合:
+          - Domain: rancher.youkan.uk
+          - Service: https://rancher.youkan.uk
+          
+          未設定の場合は cloudflared CLI で:
+          cloudflared tunnel route dns <tunnel-name> rancher.youkan.uk
+          
+          【重要】
+          ⚠️ 内部ネットワーク (192.168.0.30) でのアクセスは許可されていません
+          ⚠️ 外部 FQDN (rancher.youkan.uk) 経由のみの接続がサポートされています
+          ⚠️ これはゼロトラスト セキュリティモデルの実装です
+
+# ==========================================
+# 次のステップ: ArgoCD をインストール
+# ==========================================
+# kubernetes/argocd-bootstrap.yml で ArgoCD をセットアップ
+# 以後は Git commit でアプリケーション自動デプロイ

@@ -146,9 +146,12 @@ jobs:
 
       - name: Ansible プレイブック実行（本番デプロイ）
         if: github.event.inputs.action == 'deploy'
+        env:
+          ANSIBLE_RANCHER_PASSWORD: ${{ secrets.RANCHER_PASSWORD }}
         run: |
           TARGET="${{ github.event.inputs.target_group != 'all' && format('-l {0}', github.event.inputs.target_group) || '' }}"
-          ansible-playbook -i inventory.yml playbook-k3s-setup.yml $TARGET -v
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml $TARGET -v \
+            -e "rancher_password=${ANSIBLE_RANCHER_PASSWORD}"
 
       - name: デプロイ結果のサマリー
         if: always()
