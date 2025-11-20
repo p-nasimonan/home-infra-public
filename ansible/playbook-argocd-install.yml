@@ -32,6 +32,27 @@
             ansible_python_interpreter: /usr/bin/python3
 
         # -----------------------------------------------
+        # 0. Python/pip をインストール（必須）
+        # -----------------------------------------------
+        - name: Python3 と pip3 をインストール
+          apt:
+            name:
+              - python3
+              - python3-pip
+              - python3-venv
+            state: present
+            update_cache: yes
+          become: yes
+
+        - name: Python pip パッケージをインストール（bcrypt など）
+          pip:
+            name:
+              - bcrypt>=4.0.0
+              - kubernetes>=21.0.0
+            executable: pip3
+          become: yes
+
+        # -----------------------------------------------
         # 1. ArgoCD Namespace 作成
         # -----------------------------------------------
         - name: ArgoCD namespace を作成

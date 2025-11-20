@@ -278,6 +278,19 @@
         ansible_python_interpreter: /usr/bin/python3
 
     # -----------------------------------------------
+    # 0. Python/pip をインストール（必須）
+    # -----------------------------------------------
+    - name: Python3 と pip3 をインストール
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+        state: present
+        update_cache: yes
+      become: yes
+
+    # -----------------------------------------------
     # 1. 下準備: 必要なツール・ライブラリのインストール
     # -----------------------------------------------
     - name: Ansible k8s モジュール用 Python 依存パッケージをインストール
@@ -287,6 +300,7 @@
           - pyyaml>=5.4.1
         state: present
         executable: pip3
+      become: yes
 
     - name: Helm インストール (未インストール時)
       shell: |
