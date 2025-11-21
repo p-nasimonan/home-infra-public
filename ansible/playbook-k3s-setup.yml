@@ -105,6 +105,14 @@
       become: yes
       ignore_errors: yes
 
+    # /etc/hosts に Rancher ドメイン設定（LAN アクセス用）
+    - name: /etc/hosts に rancher.youkan.uk を追加
+      lineinfile:
+        path: /etc/hosts
+        line: "192.168.0.30 rancher.youkan.uk"
+        state: present
+      become: yes
+
     # k3s-server-1 を制御ノードに設定
     - name: k3s-server-1 を制御ノードに設定
       set_fact:
@@ -220,6 +228,14 @@
       become: yes
       ignore_errors: yes
 
+    # /etc/hosts に Rancher ドメイン設定（LAN アクセス用）
+    - name: /etc/hosts に rancher.youkan.uk を追加
+      lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1 rancher.youkan.uk"
+        state: present
+      become: yes
+
     # Rancher を制御ノードに設定
     - name: Rancher を制御ノードに設定
       set_fact:
@@ -250,7 +266,6 @@
   tags:
     - setup
     - rancher
-    - rancher-deploy
   become: yes
   vars:
     # ドメイン設定（プライベートアクセス用）
@@ -424,7 +439,7 @@
 # ==========================================
 # K3s クラスタを Rancher に登録
 # ==========================================
-# 注: API トークン不要。bootstrap パスワードのみで自動化
+# 注: /etc/hosts に rancher.youkan.uk を設定して LAN アクセスを有効にしてから実行
 # Rancher が起動している状態を前提とする
 # ==========================================
 - name: Register K3s Cluster to Rancher
@@ -433,7 +448,7 @@
     - register
     - rancher-register
   vars:
-    # Rancher サーバー情報
+    # Rancher サーバー情報（LAN アドレス）
     rancher_server: "rancher.youkan.uk"
     rancher_cluster_name: "home-k3s"
     rancher_admin_password: "{{ rancher_password }}"
@@ -448,10 +463,24 @@
       when: inventory_hostname != "k3s-server-1"
 
     - block:
+        # /etc/hosts の確認
+        - name: /etc/hosts に rancher.youkan.uk が設定されているか確認
+          shell: grep -q "rancher.youkan.uk" /etc/hosts
+          register: hosts_check
+          ignore_errors: yes
+
+        - name: /etc/hosts に rancher.youkan.uk を追加
+          lineinfile:
+            path: /etc/hosts
+            line: "192.168.0.30 rancher.youkan.uk"
+            state: present
+          become: yes
+          when: hosts_check.rc != 0
+
         # -----------------------------------------------
         # 0. Rancher が起動するまで待機
         # -----------------------------------------------
-        - name: Rancher サーバーが起動するまで待機
+        - name: Rancher サーバーが起動するまで待機（LAN アクセス）
           uri:
             url: "https://{{ rancher_server }}/v3/clusters"
             method: GET
@@ -468,7 +497,7 @@
 
         - name: Rancher は起動していません
           fail:
-            msg: "Rancher サーバーが応答していません。手動で起動を確認してください"
+            msg: "Rancher サーバーが応答していません。/etc/hosts を確認してください"
           when: rancher_check.status != 200
 
         # -----------------------------------------------
@@ -531,21 +560,15 @@
         - name: Import YAML をダウンロード
           shell: |
             curl -s -k -u admin:"{{ rancher_admin_password }}" \
-              "https://{{ rancher_server }}/v3/clusters/{{ cluster_id }}/generateKubeconfig" \
-              -X POST \
-              -H "Content-Type: application/json" \
-              -o /tmp/rancher-kubeconfig.yaml 2>/dev/null || true
-            
-            # 代替方法：import manifest を取得
-            curl -s -k -u admin:"{{ rancher_admin_password }}" \
               "https://{{ rancher_server }}/v3/clusters/{{ cluster_id }}/import" \
-              -o /tmp/rancher-import.yaml 2>/dev/null || true
+              -o /tmp/rancher-import.yaml
             
             # ファイルが存在するか確認
             if [ -f /tmp/rancher-import.yaml ] && [ -s /tmp/rancher-import.yaml ]; then
               cat /tmp/rancher-import.yaml
             else
-              echo "Warning: Import YAML が取得できませんでした" >&2
+              echo "Error: Import YAML が取得できませんでした" >&2
+              exit 1
             fi
           register: import_result
           retries: 3
@@ -561,17 +584,12 @@
         # -----------------------------------------------
         - name: Rancher agent をデプロイ
           shell: |
-            if [ -f /tmp/rancher-import.yaml ] && [ -s /tmp/rancher-import.yaml ]; then
-              k3s kubectl apply -f /tmp/rancher-import.yaml
-            else
-              echo "Warning: Import YAML がないため、agent のデプロイをスキップします"
-            fi
+            k3s kubectl apply -f /tmp/rancher-import.yaml
           environment:
             KUBECONFIG: /etc/rancher/k3s/k3s.yaml
           register: deploy_agent
           retries: 3
           delay: 5
-          ignore_errors: yes
 
         - name: Agent デプロイ結果を表示
           debug:
