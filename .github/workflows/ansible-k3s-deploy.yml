@@ -20,7 +20,6 @@ on:
         options:
           - check
           - deploy
-          - register
       target_group:
         description: 'ターゲット（all、k3s_servers、rancher_servers）'
         required: true
@@ -153,15 +152,6 @@ jobs:
           TARGET="${{ github.event.inputs.target_group != 'all' && format('-l {0}', github.event.inputs.target_group) || '' }}"
           ansible-playbook -i inventory.yml playbook-k3s-setup.yml $TARGET \
             --skip-tags register -v \
-            -e "rancher_password=${ANSIBLE_RANCHER_PASSWORD}"
-
-      - name: K3s クラスタを Rancher に登録
-        if: github.event.inputs.action == 'register'
-        env:
-          ANSIBLE_RANCHER_PASSWORD: ${{ secrets.RANCHER_PASSWORD }}
-        run: |
-          ansible-playbook -i inventory.yml playbook-k3s-setup.yml \
-            --tags register -v \
             -e "rancher_password=${ANSIBLE_RANCHER_PASSWORD}"
 
       - name: デプロイ結果のサマリー
