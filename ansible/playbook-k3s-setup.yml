@@ -254,7 +254,7 @@
     cert_manager_version: "v1.15.3"
 
     # Rancher ブートストラップパスワード（GitHub Actions Secret から）
-    rancher_bootstrap_password: "{{ rancher_password | default('RancherAdmin2024!') }}"
+    rancher_bootstrap_password: "{{ rancher_password }}"
 
   # k3s の管理者権限で実行するための環境変数
   environment:
@@ -422,8 +422,8 @@
   vars:
     # Rancher サーバー情報
     rancher_server: "rancher.youkan.uk"
-    rancher_cluster_name: "k3s-production"
-    rancher_admin_password: "{{ rancher_password | default('RancherAdmin2024!') }}"
+    rancher_cluster_name: "home-k3s"
+    rancher_admin_password: "{{ rancher_password }}"
   
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
