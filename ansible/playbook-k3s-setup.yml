@@ -12,6 +12,9 @@
 
 - name: K3s クラスタセットアップ
   hosts: k3s_servers
+  tags:
+    - setup
+    - k3s
   vars:
     # K3s リリース版（false で最新安定版を使用）
     k3s_release_version: false
@@ -136,6 +139,9 @@
 
 - name: Rancher サーバーセットアップ
   hosts: rancher_servers
+  tags:
+    - setup
+    - rancher
   vars:
     # K3s リリース版（false で最新安定版を使用）
     k3s_release_version: false
@@ -241,6 +247,10 @@
 # ==========================================
 - name: Deploy Rancher on k3s
   hosts: rancher_servers
+  tags:
+    - setup
+    - rancher
+    - rancher-deploy
   become: yes
   vars:
     # ドメイン設定（プライベートアクセス用）
@@ -419,6 +429,9 @@
 # ==========================================
 - name: Register K3s Cluster to Rancher
   hosts: k3s_servers
+  tags:
+    - register
+    - rancher-register
   vars:
     # Rancher サーバー情報
     rancher_server: "rancher.youkan.uk"
