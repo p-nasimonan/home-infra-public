@@ -513,6 +513,7 @@
             method: POST
             user: admin
             password: "{{ rancher_admin_password }}"
+            force_basic_auth: yes
             validate_certs: no
             headers:
               Content-Type: application/json
@@ -544,6 +545,7 @@
             method: GET
             user: admin
             password: "{{ rancher_admin_password }}"
+            force_basic_auth: yes
             validate_certs: no
           register: clusters_list
           retries: 3
