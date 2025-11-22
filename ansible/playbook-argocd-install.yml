@@ -84,14 +84,12 @@
               - --insecure
             service:
               type: ClusterIP
-            # HTTP-only Ingress （Cloudflare Tunnel が HTTPS 終端を担当）
+            # Ingress は Cloudflare Tunnel Ingress Controller で管理
+            # kubectl create ingress argocd-via-cf-tunnel -n argocd \
+            #   --rule="argocd.youkan.uk/*=argocd-server:80" \
+            #   --class cloudflare-tunnel
             ingress:
-              enabled: true
-              ingressClassName: traefik
-              # TLS は設定しない（HTTP のみで通信）
-              annotations:
-                # 「裏側のArgoCDはHTTPで動いてるから、HTTPSで話しかけないで」という指示
-                traefik.ingress.kubernetes.io/service.serversscheme: http
+              enabled: false
           
           # ---------------------------
           # 2. 設定周り (SSO, RBAC, Params)
@@ -156,6 +154,37 @@
       debug:
         msg: "{{ argocd_cli_version.stdout | default('CLI インストール失敗') }}"
       ignore_errors: yes
+
+    # -----------------------------------------------
+    # 4. Cloudflare Tunnel Ingress を作成
+    # -----------------------------------------------
+    - name: ArgoCD 用 Cloudflare Tunnel Ingress を作成
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        definition:
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: argocd-ingress
+            namespace: "{{ argocd_namespace }}"
+          spec:
+            ingressClassName: "cloudflare"
+            rules:
+              - host: "{{ argocd_domain }}"
+                http:
+                  paths:
+                    - pathType: Prefix
+                      path: "/"
+                      backend:
+                        service:
+                          name: argocd-server
+                          port:
+                            number: 80
+
+    - name: Ingress 作成完了
+      debug:
+        msg: "ArgoCD は https://{{ argocd_domain }} でアクセス可能です"
 
 # ==========================================
 # 次のステップ: Git リポジトリ登録とアプリケーション管理

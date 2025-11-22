@@ -1,0 +1,115 @@
+name: Ansible Cloudflare Tunnel Controller
+
+# ==========================================
+# トリガー
+# ==========================================
+on:
+  workflow_dispatch:
+
+jobs:
+  # =========================================
+  # CI: Ansible 構文検証
+  # =========================================
+  ci-validate:
+    name: CI - Ansible Syntax Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Python 依存パッケージをインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible kubernetes pyyaml
+
+      - name: Ansible ロールをインストール
+        working-directory: ansible
+        run: |
+          mkdir -p ./roles
+          ansible-galaxy install -r requirements.yml -p ./roles -f
+          ansible-galaxy list
+
+      - name: Ansible 構文チェック
+        working-directory: ansible
+        run: |
+          ansible-playbook -i inventory.ci.yml playbook-cloudflare-tunnel-controller.yml --syntax-check
+
+  # =========================================
+  # Deploy: Cloudflare Tunnel Controller インストール
+  # =========================================
+  deploy:
+    name: Deploy - Cloudflare Tunnel Controller
+    needs: ci-validate
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: ansible
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Python 依存パッケージをインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible kubernetes pyyaml bcrypt passlib
+
+      - name: SSH キーをセットアップ
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: SSH 接続テスト
+        run: |
+          ssh-keyscan -H 192.168.0.20 >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no youkan@192.168.0.20 "echo '✓ SSH接続成功'"
+
+      - name: Ansible ロールをインストール
+        run: |
+          mkdir -p ./roles
+          ansible-galaxy install -r requirements.yml -p ./roles -f
+
+      - name: Ansible 構文チェック
+        run: |
+          ansible-playbook -i inventory.yml playbook-cloudflare-tunnel-controller.yml --syntax-check
+
+      - name: ホストへの接続テスト
+        run: |
+          ansible all -i inventory.yml -m ping
+
+      - name: Cloudflare Tunnel Controller インストール（本番）
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          ansible-playbook -i inventory.yml playbook-cloudflare-tunnel-controller.yml \
+            -e "cloudflare_api_token=${CLOUDFLARE_API_TOKEN}" \
+            -e "cloudflare_account_id=${CLOUDFLARE_ACCOUNT_ID}" \
+            -v
+
+      - name: 実行完了
+        if: always()
+        run: |
+          echo "## Cloudflare Tunnel Ingress Controller インストール完了"
+          echo ""
+          echo "【次のステップ】"
+          echo "1. ArgoCD Ingress を作成:"
+          echo "   kubectl create ingress argocd-via-cf-tunnel -n argocd \\"
+          echo "     --rule=\"argocd.youkan.uk/*=argocd-server:80\" \\"
+          echo "     --class cloudflare-tunnel"

@@ -1,0 +1,85 @@
+---
+# ==========================================
+# Cloudflare Tunnel Ingress Controller のインストール
+# ==========================================
+# Cloudflare Tunnel を使用して Kubernetes Ingress を自動的に公開
+#
+# 前提条件:
+#   - Cloudflare アカウント
+#   - Cloudflare API Token（Zone:Zone:Read, Zone:DNS:Edit, Account:Cloudflare Tunnel:Edit）
+#   - Cloudflare Account ID
+#   - K3s クラスタが稼働中
+# ==========================================
+- name: Install Cloudflare Tunnel Ingress Controller
+  hosts: rancher_servers
+  vars:
+    # Cloudflare 設定（GitHub Secrets から注入）
+    cloudflare_api_token: "{{ lookup('env', 'CLOUDFLARE_API_TOKEN') }}"
+    cloudflare_account_id: "{{ lookup('env', 'CLOUDFLARE_ACCOUNT_ID') }}"
+    cloudflare_tunnel_name: "k3s-home-infra"
+    
+    # Helm チャート設定
+    chart_version: "0.0.21"
+    namespace: "cloudflare-tunnel-ingress-controller"
+
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+  tasks:
+    # -----------------------------------------------
+    # 1. Helm リポジトリを追加
+    # -----------------------------------------------
+    - name: strrl.dev Helm リポジトリを追加
+      kubernetes.core.helm_repository:
+        name: strrl.dev
+        repo_url: "https://helm.strrl.dev"
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+    # -----------------------------------------------
+    # 2. Cloudflare Tunnel Ingress Controller をインストール
+    # -----------------------------------------------
+    - name: Cloudflare Tunnel Ingress Controller をインストール
+      kubernetes.core.helm:
+        name: cloudflare-tunnel-ingress-controller
+        chart_ref: strrl.dev/cloudflare-tunnel-ingress-controller
+        release_namespace: "{{ namespace }}"
+        create_namespace: yes
+        chart_version: "{{ chart_version }}"
+        update_repo_cache: true
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        wait: yes
+        wait_timeout: 10m
+        values:
+          cloudflare:
+            apiToken: "{{ cloudflare_api_token }}"
+            accountId: "{{ cloudflare_account_id }}"
+            tunnelName: "{{ cloudflare_tunnel_name }}"
+
+    # -----------------------------------------------
+    # 3. デプロイメント確認
+    # -----------------------------------------------
+    - name: Controller Pod の起動を待機
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: cloudflare-tunnel-ingress-controller
+        namespace: "{{ namespace }}"
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+      register: controller_deployment
+      until:
+        - controller_deployment.resources[0].status.availableReplicas is defined
+        - controller_deployment.resources[0].status.availableReplicas > 0
+      retries: 30
+      delay: 10
+
+    - name: デプロイメント状態を表示
+      debug:
+        msg: "Cloudflare Tunnel Ingress Controller が正常に起動しました"
+
+# ==========================================
+# 次のステップ: ArgoCD Ingress の作成
+# ==========================================
+# kubectl create ingress argocd-via-cf-tunnel \
+#   -n argocd \
+#   --rule="argocd.youkan.uk/*=argocd-server:80" \
+#   --class cloudflare-tunnel
