@@ -5,15 +5,6 @@ name: Ansible ArgoCD Install
 # ==========================================
 on:
   workflow_dispatch:
-    inputs:
-      action:
-        description: '実行アクション（check=検証、deploy=デプロイ）'
-        required: true
-        default: 'check'
-        type: choice
-        options:
-          - check
-          - deploy
 
 jobs:
   # =========================================
@@ -59,7 +50,6 @@ jobs:
     needs: ci-validate
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
-    if: github.event.inputs.action == 'deploy'
 
     defaults:
       run:
@@ -103,13 +93,7 @@ jobs:
         run: |
           ansible all -i inventory.yml -m ping
 
-      - name: ドライラン実行（検証）
-        if: github.event.inputs.action == 'check'
-        run: |
-          ansible-playbook -i inventory.yml playbook-argocd-install.yml --check -v
-
       - name: ArgoCD インストール（本番）
-        if: github.event.inputs.action == 'deploy'
         env:
           ARGOCD_PASSWORD: ${{ secrets.ARGOCD_PASSWORD }}
         run: |
