@@ -20,7 +20,7 @@ spec:
   
   source:
     # このリポジトリから読む
-    repoURL: https://github.com/youkan0124/home-infra
+    repoURL: https://github.com/p-nasimonan/home-infra
     path: applications
     targetRevision: main
     

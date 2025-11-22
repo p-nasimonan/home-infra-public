@@ -19,15 +19,16 @@
     # ArgoCD namespace
     argocd_namespace: "argocd"
 
-    # ArgoCD admin password（GitHub Actions Secret から）
-    argocd_admin_password: "{{ argocd_password }}"
-
     # 【重要】Helm チャートバージョン
     argocd_chart_version: "9.1.3"
 
     # CLI ツール用バージョン
     # Helm チャートのバージョンに合わせる
     argocd_cli_version: "v3.2.0"
+
+    # GitHub OAuth 設定
+    # GitHub で OAuth App を作成してGitHub Secretsで管理
+    argocd_github_sso_enabled: true
 
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
@@ -72,11 +73,25 @@
               enabled: true
               ingressClassName: traefik
               hosts:
-                - "{{ argocd_domain }}"
-              tls:
-                - secretName: argocd-tls
-                  hosts:
-                    - "{{ argocd_domain }}"
+                - host: "{{ argocd_domain }}"
+                  paths:
+                    - path: /
+                      pathType: Prefix
+            # GitHub SSO 設定
+            config:
+              url: "https://{{ argocd_domain }}"
+              dex.config: |
+                connectors:
+                  - type: github
+                    id: github
+                    name: GitHub
+                    config:
+                      clientID: $GITHUB_CLIENT_ID
+                      clientSecret: $GITHUB_CLIENT_SECRET
+            rbac:
+              policy.default: "role:readonly"
+              policy.csv: |
+                g, <github-username>, role:admin
           # HA 構成ではない場合、Redis の永続化を切るとエラー回避
           redis:
             enabled: true
@@ -87,25 +102,6 @@
           configs:
             params:
               application.instanceLabelKey: argocd.argoproj.io/instance
-
-    # -----------------------------------------------
-    # 3. ArgoCD admin password を設定
-    # -----------------------------------------------
-    - name: ArgoCD secret を更新（admin password）
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: argocd-secret
-            namespace: "{{ argocd_namespace }}"
-          type: Opaque
-          stringData:
-            # Ansible の password_hash フィルターで bcrypt ハッシュ化
-            # 外部ライブラリ不要（builtin フィルター）
-            admin.password: "{{ argocd_admin_password | password_hash('bcrypt', rounds=12) }}"
-        kubeconfig: /etc/rancher/k3s/k3s.yaml
 
     # -----------------------------------------------
     # 4. ArgoCD の起動確認

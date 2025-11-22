@@ -95,10 +95,10 @@ jobs:
 
       - name: ArgoCD インストール（本番）
         env:
-          ARGOCD_PASSWORD: ${{ secrets.ARGOCD_PASSWORD }}
+          GITHUB_CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
         run: |
-          ansible-playbook -i inventory.yml playbook-argocd-install.yml -v \
-            -e "argocd_password=${ARGOCD_PASSWORD}"
+          ansible-playbook -i inventory.yml playbook-argocd-install.yml -v
 
       - name: 実行完了
         if: always()
