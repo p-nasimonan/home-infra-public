@@ -30,6 +30,12 @@
     # GitHub で OAuth App を作成してGitHub Secretsで管理
     argocd_github_sso_enabled: true
 
+    # GitHub Credentials（ワークフローから自動注入）
+    # コマンドライン: -e "github_client_id=..." -e "github_client_secret=..." -e "github_admin_username=..."
+    github_client_id: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_ID') }}"
+    github_client_secret: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_SECRET') }}"
+    github_admin_username: "{{ lookup('env', 'ARGOCD_GITHUB_USERNAME') | default('') }}"
+
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
@@ -77,7 +83,10 @@
                   paths:
                     - path: /
                       pathType: Prefix
-            # GitHub SSO 設定
+            rbac:
+              policy.default: "role:readonly"
+              policy.csv: |
+                g, {{ github_admin_username }}, role:admin
             config:
               url: "https://{{ argocd_domain }}"
               dex.config: |
@@ -86,12 +95,8 @@
                     id: github
                     name: GitHub
                     config:
-                      clientID: $ARGOCD_GITHUB_CLIENT_ID
-                      clientSecret: $ARGOCD_GITHUB_CLIENT_SECRET
-            rbac:
-              policy.default: "role:readonly"
-              policy.csv: |
-                g, <github-username>, role:admin
+                      clientID: {{ github_client_id }}
+                      clientSecret: {{ github_client_secret }}
           # HA 構成ではない場合、Redis の永続化を切るとエラー回避
           redis:
             enabled: true
@@ -99,43 +104,12 @@
             replicas: 1
           repoServer:
             replicas: 1
-          configs:
-            params:
-              application.instanceLabelKey: argocd.argoproj.io/instance
+        configs:
+          params:
+            application.instanceLabelKey: argocd.argoproj.io/instance
 
     # -----------------------------------------------
-    # 4. ArgoCD の起動確認
-    # -----------------------------------------------
-    - name: ArgoCD Server Deployment の起動を待機
-      kubernetes.core.k8s_info:
-        kind: Deployment
-        name: argocd-server
-        namespace: "{{ argocd_namespace }}"
-        kubeconfig: /etc/rancher/k3s/k3s.yaml
-      register: argocd_deployment
-      until: 
-        - argocd_deployment.resources | length > 0
-        - argocd_deployment.resources[0].status.readyReplicas is defined
-        - argocd_deployment.resources[0].status.readyReplicas > 0
-      retries: 30
-      delay: 10
-
-    - name: ArgoCD リソース一覧を表示
-      kubernetes.core.k8s_info:
-        kind: Pod
-        namespace: "{{ argocd_namespace }}"
-        kubeconfig: /etc/rancher/k3s/k3s.yaml
-      register: argocd_pods
-      changed_when: false
-
-    - name: ArgoCD Pod 情報を表示
-      debug:
-        msg: |
-          ArgoCD Pods:
-          {{ argocd_pods.resources | map(attribute='metadata.name') | list }}
-
-    # -----------------------------------------------
-    # 5. ArgoCD CLI をインストール
+    # 3. ArgoCD CLI をインストール
     # -----------------------------------------------
     - name: ArgoCD CLI がインストール済みか確認
       shell: which argocd

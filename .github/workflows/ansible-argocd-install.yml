@@ -97,8 +97,13 @@ jobs:
         env:
           ARGOCD_GITHUB_CLIENT_ID: ${{ secrets.ARGOCD_GITHUB_CLIENT_ID }}
           ARGOCD_GITHUB_CLIENT_SECRET: ${{ secrets.ARGOCD_GITHUB_CLIENT_SECRET }}
+          ARGOCD_GITHUB_USERNAME: ${{ github.actor }}
         run: |
-          ansible-playbook -i inventory.yml playbook-argocd-install.yml -v
+          ansible-playbook -i inventory.yml playbook-argocd-install.yml \
+            -e "github_client_id=${ARGOCD_GITHUB_CLIENT_ID}" \
+            -e "github_client_secret=${ARGOCD_GITHUB_CLIENT_SECRET}" \
+            -e "github_admin_username=${ARGOCD_GITHUB_USERNAME}" \
+            -v
 
       - name: 実行完了
         if: always()
