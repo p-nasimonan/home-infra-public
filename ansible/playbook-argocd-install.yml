@@ -16,14 +16,18 @@
     # ドメイン設定（プライベートアクセス用）
     argocd_domain: "argocd.youkan.uk"
 
-    # ArgoCD バージョン
-    argocd_version: "v2.11.0"
-
     # ArgoCD namespace
     argocd_namespace: "argocd"
 
     # ArgoCD admin password（GitHub Actions Secret から）
     argocd_admin_password: "{{ argocd_password }}"
+
+    # 【重要】Helm チャートバージョン
+    argocd_chart_version: "9.1.3"
+
+    # CLI ツール用バージョン
+    # Helm チャートのバージョンに合わせる
+    argocd_cli_version: "v3.2.0"
 
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
@@ -52,7 +56,7 @@
         chart_ref: argo/argo-cd
         release_namespace: "{{ argocd_namespace }}"
         create_namespace: yes
-        chart_version: "{{ argocd_version }}"
+        chart_version: "{{ argocd_chart_version }}"
         update_repo_cache: true
         kubeconfig: /etc/rancher/k3s/k3s.yaml
         wait: yes
@@ -145,7 +149,7 @@
 
     - name: ArgoCD CLI をダウンロード・インストール
       shell: |
-        ARGOCD_VERSION="{{ argocd_version }}"
+        ARGOCD_VERSION="{{ argocd_cli_version }}"
         curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64
         sudo mv /tmp/argocd /usr/local/bin/argocd
         sudo chmod +x /usr/local/bin/argocd
