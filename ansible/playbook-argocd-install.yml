@@ -70,6 +70,12 @@
         wait_timeout: 15m
         values:
           # ---------------------------
+          # 0. グローバル設定（すべてのコンポーネントに反映）
+          # ---------------------------
+          global:
+            domain: "{{ argocd_domain }}"
+
+          # ---------------------------
           # 1. サーバー基本設定
           # ---------------------------
           server:
@@ -80,12 +86,6 @@
             ingress:
               enabled: true
               ingressClassName: traefik
-              hosts:
-                - "{{ argocd_domain }}"
-              tls:
-                - secretName: argocd-tls
-                  hosts:
-                    - "{{ argocd_domain }}"
           
           # ---------------------------
           # 2. 設定周り (SSO, RBAC, Params)
@@ -94,7 +94,6 @@
           configs:
             # ▼ SSO設定 (argocd-cm)
             cm:
-              url: "https://{{ argocd_domain }}"
               dex.config: |
                 connectors:
                   - type: github
