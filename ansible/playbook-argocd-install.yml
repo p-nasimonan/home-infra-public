@@ -79,13 +79,19 @@
           # 1. サーバー基本設定
           # ---------------------------
           server:
+            # HTTP のみで動作（SSL 終端は Cloudflare Tunnel に委譲）
             extraArgs:
               - --insecure
             service:
               type: ClusterIP
+            # HTTP-only Ingress （Cloudflare Tunnel が HTTPS 終端を担当）
             ingress:
               enabled: true
               ingressClassName: traefik
+              # TLS は設定しない（HTTP のみで通信）
+              annotations:
+                # 「裏側のArgoCDはHTTPで動いてるから、HTTPSで話しかけないで」という指示
+                traefik.ingress.kubernetes.io/service.serversscheme: http
           
           # ---------------------------
           # 2. 設定周り (SSO, RBAC, Params)
