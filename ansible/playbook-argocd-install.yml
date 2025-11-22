@@ -31,115 +31,111 @@
   tasks:
     # -----------------------------------------------
     # 前置き：既に Python・kubectl・helm が整備されているため省略
+    # Namespace は Helm の create_namespace: yes で自動作成
     # -----------------------------------------------
 
     # -----------------------------------------------
-    # 1. ArgoCD Namespace 作成
-    # -----------------------------------------------
-    - name: ArgoCD namespace を作成
-      shell: |
-        kubectl create namespace {{ argocd_namespace }} --dry-run=client -o yaml | kubectl apply -f -
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      changed_when: false
-
-    # -----------------------------------------------
-    # 2. ArgoCD Helm リポジトリ追加
+    # 1. ArgoCD Helm リポジトリ追加
     # -----------------------------------------------
     - name: ArgoCD Helm リポジトリを追加
-      shell: |
-        helm repo add argo https://argoproj.github.io/argo-helm
-        helm repo update
-      args:
-        executable: /bin/bash
+      kubernetes.core.helm_repository:
+        name: argo
+        repo_url: "https://argoproj.github.io/argo-helm"
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
 
     # -----------------------------------------------
-    # 3. ArgoCD をインストール（Helm）
+    # 2. ArgoCD をインストール（Helm、Namespace 自動作成）
     # -----------------------------------------------
-    - name: ArgoCD をインストール（Helm）
-      shell: |
-        helm upgrade --install argocd argo/argo-cd \
-          --namespace {{ argocd_namespace }} \
-          --version {{ argocd_version }} \
-          --set server.service.type=ClusterIP \
-          --set server.ingress.enabled=true \
-          --set server.ingress.ingressClassName=traefik \
-          --set "server.ingress.hosts={{{ argocd_domain }}}}" \
-          --set server.ingress.tls[0].secretName=argocd-tls \
-          --set "server.ingress.tls[0].hosts={{{ argocd_domain }}}}" \
-          --set "server.extraArgs={--insecure}" \
-          --set controller.replicas=1 \
-          --set repoServer.replicas=1 \
-          --set redis.enabled=true \
-          --set configs.params."application\.instanceLabelKey"=argocd.argoproj.io/instance \
-          --wait --timeout 15m
-      args:
-        executable: /bin/bash
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    - name: ArgoCD をインストール（Helm、Namespace 自動作成）
+      kubernetes.core.helm:
+        name: argocd
+        chart_ref: argo/argo-cd
+        release_namespace: "{{ argocd_namespace }}"
+        create_namespace: yes
+        chart_version: "{{ argocd_version }}"
+        update_repo_cache: true
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        wait: yes
+        wait_timeout: 15m
+        values:
+          server:
+            # SSL 終端を Traefik に任せるために必須
+            extraArgs:
+              - --insecure
+            service:
+              type: ClusterIP
+            ingress:
+              enabled: true
+              ingressClassName: traefik
+              hosts:
+                - "{{ argocd_domain }}"
+              tls:
+                - secretName: argocd-tls
+                  hosts:
+                    - "{{ argocd_domain }}"
+          # HA 構成ではない場合、Redis の永続化を切るとエラー回避
+          redis:
+            enabled: true
+          controller:
+            replicas: 1
+          repoServer:
+            replicas: 1
+          configs:
+            params:
+              application.instanceLabelKey: argocd.argoproj.io/instance
 
     # -----------------------------------------------
-    # 4. ArgoCD admin password を設定
+    # 3. ArgoCD admin password を設定
     # -----------------------------------------------
-    - name: ArgoCD admin password をハッシュ化
-      shell: |
-        python3 << 'EOF'
-        import bcrypt
-        password = "{{ argocd_admin_password }}".encode('utf-8')
-        hashed = bcrypt.hashpw(password, bcrypt.gensalt(rounds=12))
-        print(hashed.decode('utf-8'))
-        EOF
-      register: argocd_password_hash
-      changed_when: false
-
     - name: ArgoCD secret を更新（admin password）
-      shell: |
-        kubectl patch secret argocd-secret -n {{ argocd_namespace }} \
-          -p '{"stringData":{"admin.password":"{{ argocd_password_hash.stdout }}"}}'
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      changed_when: false
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: argocd-secret
+            namespace: "{{ argocd_namespace }}"
+          type: Opaque
+          stringData:
+            # Ansible の password_hash フィルターで bcrypt ハッシュ化
+            # 外部ライブラリ不要（builtin フィルター）
+            admin.password: "{{ argocd_admin_password | password_hash('bcrypt', rounds=12) }}"
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
 
     # -----------------------------------------------
-    # 5. ArgoCD の起動確認
+    # 4. ArgoCD の起動確認
     # -----------------------------------------------
-    - name: ArgoCD Server Pod の起動を待機
-      shell: |
-        kubectl get pods -n {{ argocd_namespace }} -l app.kubernetes.io/name=argocd-server \
-          -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotReady"
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      register: argocd_ready
-      until: argocd_ready.stdout == "Running"
+    - name: ArgoCD Server Deployment の起動を待機
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: argocd-server
+        namespace: "{{ argocd_namespace }}"
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+      register: argocd_deployment
+      until: 
+        - argocd_deployment.resources | length > 0
+        - argocd_deployment.resources[0].status.readyReplicas is defined
+        - argocd_deployment.resources[0].status.readyReplicas > 0
       retries: 30
       delay: 10
 
-    - name: ArgoCD ポッド一覧を表示
-      shell: |
-        kubectl get pods -n {{ argocd_namespace }}
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    - name: ArgoCD リソース一覧を表示
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ argocd_namespace }}"
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
       register: argocd_pods
       changed_when: false
 
-    - name: ArgoCD ポッド情報
+    - name: ArgoCD Pod 情報を表示
       debug:
-        msg: "{{ argocd_pods.stdout }}"
-
-    - name: ArgoCD Service & Ingress を確認
-      shell: |
-        kubectl get svc,ing -n {{ argocd_namespace }}
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      register: argocd_resources
-      changed_when: false
-
-    - name: ArgoCD リソース情報
-      debug:
-        msg: "{{ argocd_resources.stdout }}"
+        msg: |
+          ArgoCD Pods:
+          {{ argocd_pods.resources | map(attribute='metadata.name') | list }}
 
     # -----------------------------------------------
-    # 6. ArgoCD CLI をインストール
+    # 5. ArgoCD CLI をインストール
     # -----------------------------------------------
     - name: ArgoCD CLI がインストール済みか確認
       shell: which argocd
