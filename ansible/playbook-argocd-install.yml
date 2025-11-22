@@ -84,12 +84,15 @@
               - --insecure
             service:
               type: ClusterIP
-            # Ingress は Cloudflare Tunnel Ingress Controller で管理
-            # kubectl create ingress argocd-via-cf-tunnel -n argocd \
-            #   --rule="argocd.youkan.uk/*=argocd-server:80" \
-            #   --class cloudflare-tunnel
+            # Traefik Ingress（Cloudflare *.youkan.uk → Tunnel → Traefik → ArgoCD）
             ingress:
-              enabled: false
+              enabled: true
+              ingressClassName: traefik
+              hosts:
+                - "{{ argocd_domain }}"
+              annotations:
+                # バックエンドは HTTP で通信
+                traefik.ingress.kubernetes.io/service.serversscheme: http
           
           # ---------------------------
           # 2. 設定周り (SSO, RBAC, Params)
@@ -155,41 +158,19 @@
         msg: "{{ argocd_cli_version.stdout | default('CLI インストール失敗') }}"
       ignore_errors: yes
 
-    # -----------------------------------------------
-    # 4. Cloudflare Tunnel Ingress を作成
-    # -----------------------------------------------
-    - name: ArgoCD 用 Cloudflare Tunnel Ingress を作成
-      kubernetes.core.k8s:
-        state: present
-        kubeconfig: /etc/rancher/k3s/k3s.yaml
-        definition:
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            name: argocd-ingress
-            namespace: "{{ argocd_namespace }}"
-          spec:
-            ingressClassName: "cloudflare"
-            rules:
-              - host: "{{ argocd_domain }}"
-                http:
-                  paths:
-                    - pathType: Prefix
-                      path: "/"
-                      backend:
-                        service:
-                          name: argocd-server
-                          port:
-                            number: 80
-
-    - name: Ingress 作成完了
+    - name: アクセス情報を表示
       debug:
-        msg: "ArgoCD は https://{{ argocd_domain }} でアクセス可能です"
+        msg: "ArgoCD は https://{{ argocd_domain }} でアクセス可能です（Cloudflare Tunnel 経由）"
 
 # ==========================================
 # 次のステップ: Git リポジトリ登録とアプリケーション管理
 # ==========================================
 # ArgoCD へ Git リポジトリを登録し、
 # Application リソースを定義してデプロイを自動化
+#
+# 【Cloudflare 設定】
+# 1. Cloudflare Tunnel を作成: cloudflared tunnel create k3s-home
+# 2. DNS レコード: *.youkan.uk → Tunnel (CNAME)
+# 3. Tunnel Route: https://youkan.uk → http://192.168.0.30:80 (Traefik)
 
 
