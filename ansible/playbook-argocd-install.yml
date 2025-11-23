@@ -83,16 +83,19 @@
             extraArgs:
               - --insecure
             service:
+              # ▼▼▼ ArgoCD Service のポートを明示的に指定 ▼▼▼
+              port: 80          # HTTP ポートをデフォルトにする
+              targetPort: 8080  # Pod が待機しているポート
               type: ClusterIP
             # Traefik Ingress（Cloudflare *.youkan.uk → Tunnel → Traefik → ArgoCD）
             ingress:
               enabled: true
               ingressClassName: traefik
+              annotations:
+                # HTTP スキームを使用するよう指示
+                traefik.ingress.kubernetes.io/service.serversscheme: http
               hosts:
                 - "{{ argocd_domain }}"
-              annotations:
-                # バックエンドは HTTP で通信
-                traefik.ingress.kubernetes.io/service.serversscheme: http
           
           # ---------------------------
           # 2. 設定周り (SSO, RBAC, Params)
