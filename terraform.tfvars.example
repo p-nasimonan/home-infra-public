@@ -7,7 +7,6 @@
 
 proxmox_token_id     = "terraform@pve!terraform"
 proxmox_token_secret = "your_proxmox_api_secret_here"
-proxmox_node         = "aduki"
 
 # Proxmox terraform ユーザーの SSH 秘密鍵（multiline）
 proxmox_ssh_private_key = <<-EOT

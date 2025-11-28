@@ -20,12 +20,6 @@ variable "proxmox_token_secret" {
   sensitive   = true
 }
 
-variable "proxmox_node" {
-  description = "Default Proxmox node to use"
-  type        = string
-  default     = "aduki" # または "monaka" または "anko"
-}
-
 # ==========================================
 # SSH Public Key for Cloud-init
 # ==========================================
