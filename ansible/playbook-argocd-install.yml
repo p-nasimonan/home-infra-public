@@ -137,6 +137,8 @@
             # ▼ その他のパラメータ
             params:
               application.instanceLabelKey: argocd.argoproj.io/instance
+              # Insecure モード（HTTP のみ、HTTPS 不使用）
+              server.insecure: "true"
 
           # HA 構成ではない場合、Redis の永続化を切るとエラー回避
           redis:
