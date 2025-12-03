@@ -95,7 +95,10 @@
                 # HTTP スキームを使用するよう指示
                 traefik.ingress.kubernetes.io/service.serversscheme: http
               hosts:
-                - "{{ argocd_domain }}"
+                - host: "{{ argocd_domain }}"
+                  paths:
+                    - path: /
+                      pathType: Prefix
           
           # ---------------------------
           # 2. 設定周り (SSO, RBAC, Params)
@@ -144,37 +147,74 @@
             replicas: 1
 
     # -----------------------------------------------
-    # 3. ArgoCD CLI をインストール
+    # 3. デプロイメント確認
     # -----------------------------------------------
-    - name: ArgoCD CLI がインストール済みか確認
-      shell: which argocd
-      register: argocd_cli_check
-      changed_when: false
-      ignore_errors: yes
-
-    - name: ArgoCD CLI をダウンロード・インストール
-      shell: |
-        ARGOCD_VERSION="{{ argocd_cli_version }}"
-        curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64
-        sudo mv /tmp/argocd /usr/local/bin/argocd
-        sudo chmod +x /usr/local/bin/argocd
-      args:
-        executable: /bin/bash
-      when: argocd_cli_check.rc != 0
-
-    - name: ArgoCD CLI バージョン確認
-      shell: argocd version --short
-      register: argocd_cli_version
-      changed_when: false
-      ignore_errors: yes
-
-    - name: ArgoCD CLI バージョン情報
-      debug:
-        msg: "{{ argocd_cli_version.stdout | default('CLI インストール失敗') }}"
-      ignore_errors: yes
-
     - name: アクセス情報を表示
       debug:
         msg: "ArgoCD は https://{{ argocd_domain }} でアクセス可能です（Cloudflare Tunnel 経由）"
+
+    # -----------------------------------------------
+    # 4. Ingress デバッグ情報
+    # -----------------------------------------------
+    - name: Ingress リソース情報を取得
+      shell: |
+        kubectl get ingress -n {{ argocd_namespace }} -o yaml
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: ingress_info
+      changed_when: false
+
+    - name: Ingress 情報を表示
+      debug:
+        msg: "{{ ingress_info.stdout }}"
+
+    - name: Traefik のサービス情報を取得
+      shell: |
+        kubectl get svc -n kube-system -l app.kubernetes.io/name=traefik -o yaml
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: traefik_svc
+      changed_when: false
+
+    - name: Traefik Service 情報を表示
+      debug:
+        msg: "{{ traefik_svc.stdout }}"
+
+    - name: ArgoCD Server サービス情報を取得
+      shell: |
+        kubectl get svc -n {{ argocd_namespace }} -o yaml
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: argocd_svc
+      changed_when: false
+
+    - name: ArgoCD Service 情報を表示
+      debug:
+        msg: "{{ argocd_svc.stdout }}"
+
+    - name: ArgoCD Server Pod ログを取得
+      shell: |
+        kubectl logs -n {{ argocd_namespace }} -l app.kubernetes.io/name=argocd-server --tail=50
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: argocd_logs
+      changed_when: false
+      ignore_errors: yes
+
+    - name: ArgoCD Server Pod ログを表示
+      debug:
+        msg: "{{ argocd_logs.stdout }}"
+
+    - name: Traefik IngressRoute/IngressClass を確認
+      shell: |
+        kubectl get ingressclass -o yaml
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: ingressclass
+      changed_when: false
+
+    - name: IngressClass 情報を表示
+      debug:
+        msg: "{{ ingressclass.stdout }}"
 
 
