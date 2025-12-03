@@ -47,113 +47,60 @@ Terraform + Ansible + ArgoCD + GitHub Actions で自宅インフラ(K3s + GitOps
 ```
 home-infra/
 ├── README.md                          # このファイル
-├── QUICKSTART.md                      # クイックスタート
-├── CLOUDFLARE_TUNNEL_SETUP.md         # Tunnel Ingress セットアップガイド
-├── ARGOCD_GITOPS_SETUP.md             # ArgoCD GitOps セットアップガイド
-├── terraform.tfvars                   # Terraform 変数（本番）
 ├── terraform.tfvars.example           # Terraform 変数（テンプレート）
 ├── variables.tf                       # 変数定義
 ├── providers.tf                       # Terraform providers
-│
-├── cloudflare/                        # Cloudflare リソース
-│   ├── dns.tf                         # DNS レコード
-│   ├── tunnel.tf                      # Tunnel 設定
-│   └── outputs.tf                     # 出力値
-│
-├── proxmox/                           # Proxmox リソース
-│   ├── vms.tf                         # VMs (K3s + Rancher)
-│   ├── network.tf                     # ネットワーク設定
-│   └── outputs.tf                     # 出力値
+├── data-sources.tf                    # データソース
+├── network_zones.tf                   # ネットワーク設定
+├── vms.tf                             # VMs (K3s + Rancher)
+├── outputs.tf                         # 出力値
 │
 ├── ansible/                           # Ansible playbooks
 │   ├── inventory.yml                  # ホスト定義
 │   ├── requirements.yml               # ロール/コレクション
-│   ├── playbook-k3s-setup.yml         # K3s + Rancher デプロイ（メイン）
-│   ├── playbook-argocd-install.yml    # ArgoCD インストール
-│   ├── playbook-argocd-cloudflare-tunnel.yml  # Tunnel Ingress (GitOps)
-│   └── roles/                         # カスタムロール（オプション）
-│
-├── applications/                      # Kubernetes Applications (GitOps)
-│   ├── cloudflare-tunnel-ingress/     # Cloudflare Tunnel Ingress Controller
-│   │   └── application.yaml
-│   ├── rancher/                       # Rancher
-│   │   └── application.yaml
-│   └── app-of-apps.yaml               # 親 Application（全アプリ管理）
+│   ├── playbook-k3s-setup.yml         # K3s + Rancher デプロイ
+│   └── playbook-argocd-install.yml    # ArgoCD インストール
 │
 └── .github/workflows/
-    ├── terraform-plan.yml             # Terraform 計画
-    └── ansible-k3s-deploy.yml         # Ansible 本番デプロイ
+    ├── deploy_to_runner.yml           # Terraform + Ansible 本番デプロイ
+    └── ci-validate.yml                # CI 検証
 ```
 
 ## ⚡ クイックスタート
 
 ### 前提条件
 
-- Proxmox VE ホスト（3台推奨）
-- Cloudflare account
-- Terraform 1.13+
-- Ansible 2.9+
+- Self-hosted GitHub Runner（Proxmox ホストまたは専用マシン上）
 - GitHub Actions 対応リポジトリ
+- SSH キーペア（Proxmox/VM アクセス用）
 
-### 1️⃣ Terraform で VMs を作成
+### ワークフロー実行
 
-```bash
-cd terraform
-terraform init
-terraform plan
-terraform apply
+すべてのデプロイは **GitHub Actions** 経由で実行します。リポジトリの Actions タブから以下を実行：
+
+#### 1️⃣ `deploy_to_runner` Workflow で Terraform + Ansible をデプロイ
+
+Actions → `deploy_to_runner` → `Run workflow`
+
+**入力パラメータ**:
+- `terraform_action`: `plan`, `apply`, `destroy` から選択
+- `ansible_target`: `k3s_setup` または `argocd_install`
+
+**実行内容**:
+- Terraform で 3 × K3s servers + 1 × Rancher server VM を作成
+- Ansible で K3s + Rancher をセットアップ
+- 全て自動で実行（ローカル実行は不要）
+
+#### 2️⃣ ArgoCD に Git リポジトリを登録
+
+ArgoCD UI にて `home-manifests` リポジトリを登録:
+```
+Repo: https://github.com/p-nasimonan/home-manifests
 ```
 
-**出力**: 3 × K3s servers + 1 × Rancher server VM
+#### 3️⃣ アプリケーション自動デプロイ
 
-### 2️⃣ Cloudflare Tunnel を作成
-
-```bash
-# ローカルマシンで実行
-cloudflared tunnel login
-cloudflared tunnel create k3s-rancher
-cloudflared tunnel route dns k3s-rancher rancher.youkan.uk
-cloudflared tunnel route dns k3s-rancher argocd.youkan.uk
-```
-
-### 3️⃣ Ansible で K3s + Rancher をデプロイ
-
-```bash
-cd ansible
-ansible-playbook -i inventory.yml playbook-k3s-setup.yml \
-  -e "rancher_password=YourSecurePassword123!"
-```
-
-または GitHub Actions: `ansible-k3s-deploy` workflow を実行
-
-### 4️⃣ ArgoCD をインストール
-
-```bash
-# ローカルで実行
-ansible-playbook -i ansible/inventory.yml ansible/playbook-argocd-install.yml \
-  -e "argocd_password=YourSecurePassword123!"
-```
-
-または GitHub Actions: `ansible-argocd-install` workflow を実行
-
-### 5️⃣ アプリケーション自動デプロイ設定
-
-```bash
-# Git リポジトリを ArgoCD に登録
-argocd repo add https://github.com/youkan0124/home-infra
-
-# App of Apps で全アプリケーション管理
-kubectl apply -f applications/app-of-apps.yaml
-```
-
-### 6️⃣ アクセス
-
-```
-Rancher: https://rancher.youkan.uk
-ArgoCD:  https://argocd.youkan.uk
-```
-
-> 詳細は [ARGOCD_GITOPS_SETUP.md](ARGOCD_GITOPS_SETUP.md) と [CLOUDFLARE_TUNNEL_SETUP.md](CLOUDFLARE_TUNNEL_SETUP.md) を参照
+`home-manifests` リポジトリに Application manifests を push すると、ArgoCD が自動で同期します。
 
 ## 🔑 GitHub Secrets 設定
 
@@ -161,13 +108,13 @@ ArgoCD:  https://argocd.youkan.uk
 
 | Secret 名 | 説明 | 用途 |
 |----------|------|------|
-| `TERRAFORM_BACKEND_PASS` | Terraform Cloud API token | terraform-plan workflow |
-| `PROXMOX_TOKEN_ID` | Proxmox API Token ID | terraform-plan workflow |
-| `PROXMOX_TOKEN_SECRET` | Proxmox API Token Secret | terraform-plan workflow |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API token | terraform-plan workflow |
-| `RANCHER_PASSWORD` | Rancher bootstrap password | ansible-k3s-deploy workflow |
-| `ARGOCD_PASSWORD` | ArgoCD admin password | ansible-argocd-install workflow |
-| `ANSIBLE_SSH_PRIVATE_KEY` | SSH private key | 全 Ansible workflow |
+| `PROXMOX_API_URL` | Proxmox API URL (https://xxx.xxx.x.xx:8006/api2/json) | deploy_to_runner workflow |
+| `PROXMOX_TOKEN_ID` | Proxmox API Token ID | deploy_to_runner workflow |
+| `PROXMOX_TOKEN_SECRET` | Proxmox API Token Secret | deploy_to_runner workflow |
+| `PROXMOX_VE_SSH_PRIVATE_KEY` | SSH private key（Proxmox/VMs へのアクセス用） | Ansible ステップ |
+| `SSH_PUBLIC_KEY` | SSH public key | Terraform（VM キー設定） |
+| `UBUNTU_PASSWORD` | Ubuntu VM password | Terraform（VM 初期設定） |
+| `TERRAFORM_CLOUD_TOKEN` | Terraform Cloud API token | Terraform Cloud state 管理 |
 
 
 ## 📋 インベントリ設定（inventory.yml）
@@ -186,10 +133,17 @@ rancher-server ansible_host=192.168.0.30 ansible_user=youkan
 
 ## 🔄 GitOps ワークフロー（推奨）
 
+このリポジトリは **Infrastructure as Code** （Terraform + Ansible）を管理します。
+
+Kubernetes Application manifests は別リポジトリ **`home-manifests`** で管理します：
+https://github.com/p-nasimonan/home-manifests
+
 ### Application 追加手順
 
-**1. Application manifest を作成**
+**1. `home-manifests` リポジトリに Application manifest を作成**
+
 ```bash
+# home-manifests リポジトリで実行
 mkdir -p applications/myapp
 cat > applications/myapp/application.yaml << 'EOF'
 apiVersion: argoproj.io/v1alpha1
@@ -215,40 +169,35 @@ spec:
 EOF
 ```
 
-**2. Kustomization に追加**
-```yaml
-# applications/kustomization.yaml
-resources:
-  - cloudflare-tunnel-ingress/application.yaml
-  - myapp/application.yaml  # ← 追加
-```
+**2. Git にコミット & push**
 
-**3. Git にコミット**
 ```bash
 git add applications/
 git commit -m "feat: add myapp application"
 git push origin main
 ```
 
-**4. ArgoCD が自動同期**
-- ArgoCD UI: https://argocd.youkan.uk
+**3. ArgoCD が自動同期**
+
+- ArgoCD は `home-manifests` リポジトリを監視
+- push されたら自動で同期開始
 - myapp が `Synced` ✅
 
 ### ワークフロー分割
 
-| Workflow | ファイル | 用途 |
-|----------|---------|------|
-| `terraform-plan` | - | Proxmox VMs 計画 |
-| `ansible-k3s-deploy` | `playbook-k3s-setup.yml` | K3s + Rancher デプロイ |
-| `ansible-argocd-install` | `playbook-argocd-install.yml` | ArgoCD インストール |
+| リポジトリ | 用途 |
+|----------|------|
+| **home-infra** (このリポ) | Terraform + Ansible（インフラ構成）|
+| **home-manifests** | Kubernetes Applications（GitOps）|
 
 以後は **Git push だけで自動デプロイ** ✨
 
 ## 🔗 参考リンク
 
-- [Terraform Proxmox Provider](https://registry.terraform.io/providers/Telmate/proxmox/latest/docs)
-- [Cloudflare Tunnel Ingress](https://github.com/cloudflare/cloudflare-operator)
-- [K3s Documentation](https://docs.k3s.io/)
-- [Rancher Documentation](https://rancher.com/docs/)
-- [ArgoCD Documentation](https://argo-cd.readthedocs.io/)
-- [GitOps Best Practices](https://www.weave.works/blog/gitops-operations-by-pull-request/)
+- [Terraform Proxmox Provider](https://registry.terraform.io/providers/bpg/proxmox/latest/docs)
+
+---
+
+## 📍 別リポジトリ
+
+- **Application Manifests**: https://github.com/p-nasimonan/home-manifests
