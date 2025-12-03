@@ -165,15 +165,4 @@
       debug:
         msg: "ArgoCD は https://{{ argocd_domain }} でアクセス可能です（Cloudflare Tunnel 経由）"
 
-# ==========================================
-# 次のステップ: Git リポジトリ登録とアプリケーション管理
-# ==========================================
-# ArgoCD へ Git リポジトリを登録し、
-# Application リソースを定義してデプロイを自動化
-#
-# 【Cloudflare 設定】
-# 1. Cloudflare Tunnel を作成: cloudflared tunnel create k3s-home
-# 2. DNS レコード: *.youkan.uk → Tunnel (CNAME)
-# 3. Tunnel Route: https://youkan.uk → http://192.168.0.30:80 (Traefik)
-
 
