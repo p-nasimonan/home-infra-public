@@ -117,6 +117,18 @@
             rbac:
               policy.default: "role:readonly"
               policy.csv: |
+                # admin ロール定義：リポジトリ、クラスタ、アプリケーション全権限
+                p, role:admin, applications, *, */*, allow
+                p, role:admin, applications, sync, */*, allow
+                p, role:admin, repositories, create, default/https://*, allow
+                p, role:admin, repositories, get, *, allow
+                p, role:admin, repositories, update, *, allow
+                p, role:admin, repositories, delete, *, allow
+                p, role:admin, clusters, get, *, allow
+                p, role:admin, accounts, get, *, allow
+                p, role:admin, accounts, update, *, allow
+                
+                # SSO ユーザーに admin ロール割り当て
                 g, {{ github_admin_username }}, role:admin
 
             # ▼ その他のパラメータ
