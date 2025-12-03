@@ -1,0 +1,168 @@
+---
+# ==========================================
+# ArgoCD のインストール
+# ==========================================
+# GitOps ベースの CD ツール
+# Rancher サーバー（rancher-server）上に Helm でインストール
+#
+# 前提条件:
+#   - Rancher が起動している状態
+#   - /etc/hosts に rancher.youkan.uk が設定済み（内部通信用）
+#   - 外部アクセスは Cloudflare Tunnel 経由
+# ==========================================
+- name: Install ArgoCD on Rancher Cluster
+  hosts: rancher_servers
+  vars:
+    # ドメイン設定（プライベートアクセス用）
+    argocd_domain: "argocd.youkan.uk"
+
+    # ArgoCD namespace
+    argocd_namespace: "argocd"
+
+    # 【重要】Helm チャートバージョン
+    argocd_chart_version: "9.1.3"
+
+    # CLI ツール用バージョン
+    # Helm チャートのバージョンに合わせる
+    argocd_cli_version: "v3.2.0"
+
+    # GitHub OAuth 設定
+    # GitHub で OAuth App を作成してGitHub Secretsで管理
+    argocd_github_sso_enabled: true
+
+    # GitHub Credentials（ワークフローから自動注入）
+    # コマンドライン: -e "github_client_id=..." -e "github_client_secret=..." -e "github_admin_username=..."
+    github_client_id: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_ID') }}"
+    github_client_secret: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_SECRET') }}"
+    github_admin_username: "{{ lookup('env', 'ARGOCD_GITHUB_USERNAME') | default('') }}"
+
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+  tasks:
+    # -----------------------------------------------
+    # 前置き：既に Python・kubectl・helm が整備されているため省略
+    # Namespace は Helm の create_namespace: yes で自動作成
+    # -----------------------------------------------
+
+    # -----------------------------------------------
+    # 1. ArgoCD Helm リポジトリ追加
+    # -----------------------------------------------
+    - name: ArgoCD Helm リポジトリを追加
+      kubernetes.core.helm_repository:
+        name: argo
+        repo_url: "https://argoproj.github.io/argo-helm"
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+    # -----------------------------------------------
+    # 2. ArgoCD をインストール（Helm、Namespace 自動作成）
+    # -----------------------------------------------
+    - name: ArgoCD をインストール（Helm、Namespace 自動作成）
+      kubernetes.core.helm:
+        name: argocd
+        chart_ref: argo/argo-cd
+        release_namespace: "{{ argocd_namespace }}"
+        create_namespace: yes
+        chart_version: "{{ argocd_chart_version }}"
+        update_repo_cache: true
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        wait: yes
+        wait_timeout: 15m
+        values:
+          # ---------------------------
+          # 0. グローバル設定（すべてのコンポーネントに反映）
+          # ---------------------------
+          global:
+            domain: "{{ argocd_domain }}"
+
+          # ---------------------------
+          # 1. サーバー基本設定
+          # ---------------------------
+          server:
+            # HTTP のみで動作（SSL 終端は Cloudflare Tunnel に委譲）
+            extraArgs:
+              - --insecure
+            service:
+              # ▼▼▼ ArgoCD Service のポートを明示的に指定 ▼▼▼
+              port: 80          # HTTP ポートをデフォルトにする
+              targetPort: 8080  # Pod が待機しているポート
+              type: ClusterIP
+            # Traefik Ingress（Cloudflare *.youkan.uk → Tunnel → Traefik → ArgoCD）
+            ingress:
+              enabled: true
+              ingressClassName: traefik
+              annotations:
+                # HTTP スキームを使用するよう指示
+                traefik.ingress.kubernetes.io/service.serversscheme: http
+              hosts:
+                - "{{ argocd_domain }}"
+          
+          # ---------------------------
+          # 2. 設定周り (SSO, RBAC, Params)
+          # ★すべて 'configs' の下にまとめます
+          # ---------------------------
+          configs:
+            # ▼ SSO設定 (argocd-cm)
+            cm:
+              dex.config: |
+                connectors:
+                  - type: github
+                    id: github
+                    name: GitHub
+                    config:
+                      clientID: {{ github_client_id }}
+                      clientSecret: {{ github_client_secret }}
+            
+            # ▼ 権限設定 (argocd-rbac-cm)
+            rbac:
+              policy.default: "role:readonly"
+              policy.csv: |
+                g, {{ github_admin_username }}, role:admin
+
+            # ▼ その他のパラメータ
+            params:
+              application.instanceLabelKey: argocd.argoproj.io/instance
+
+          # HA 構成ではない場合、Redis の永続化を切るとエラー回避
+          redis:
+            enabled: true
+          controller:
+            replicas: 1
+          repoServer:
+            replicas: 1
+
+    # -----------------------------------------------
+    # 3. ArgoCD CLI をインストール
+    # -----------------------------------------------
+    - name: ArgoCD CLI がインストール済みか確認
+      shell: which argocd
+      register: argocd_cli_check
+      changed_when: false
+      ignore_errors: yes
+
+    - name: ArgoCD CLI をダウンロード・インストール
+      shell: |
+        ARGOCD_VERSION="{{ argocd_cli_version }}"
+        curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64
+        sudo mv /tmp/argocd /usr/local/bin/argocd
+        sudo chmod +x /usr/local/bin/argocd
+      args:
+        executable: /bin/bash
+      when: argocd_cli_check.rc != 0
+
+    - name: ArgoCD CLI バージョン確認
+      shell: argocd version --short
+      register: argocd_cli_version
+      changed_when: false
+      ignore_errors: yes
+
+    - name: ArgoCD CLI バージョン情報
+      debug:
+        msg: "{{ argocd_cli_version.stdout | default('CLI インストール失敗') }}"
+      ignore_errors: yes
+
+    - name: アクセス情報を表示
+      debug:
+        msg: "ArgoCD は https://{{ argocd_domain }} でアクセス可能です（Cloudflare Tunnel 経由）"
+
+

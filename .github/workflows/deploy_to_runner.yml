@@ -1,0 +1,94 @@
+name: Deploy Terraform on infra-runner
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**.tf'
+      - 'terraform.tfvars.example'
+      - '.github/workflows/deploy_to_runner.yml'
+  workflow_dispatch:
+    inputs:
+      terraform_action:
+        description: 'Terraform action to run'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+jobs:
+  terraform:
+    name: Terraform on self-hosted runner
+    runs-on: [self-hosted, Linux, X64]
+    
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+    
+    env:
+      TF_VAR_proxmox_api_url: ${{ secrets.PROXMOX_API_URL }}
+      TF_VAR_proxmox_token_id: ${{ secrets.PROXMOX_TOKEN_ID }}
+      TF_VAR_proxmox_token_secret: ${{ secrets.PROXMOX_TOKEN_SECRET }}
+      TF_VAR_proxmox_ssh_private_key: ${{ secrets.PROXMOX_VE_SSH_PRIVATE_KEY }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+      TF_VAR_ubuntu_password: ${{ secrets.UBUNTU_PASSWORD }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH 
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          # GitHub Secretsから秘密鍵を直接渡す
+          ssh-private-key: ${{ secrets.PROXMOX_VE_SSH_PRIVATE_KEY }}
+
+      - name: Run API Permission Check Script
+        run: |
+          chmod +x .github/scripts/check-api-permissions.sh
+          .github/scripts/check-api-permissions.sh
+        env:
+          TF_VAR_proxmox_token_id: ${{ secrets.PROXMOX_TOKEN_ID }}
+          TF_VAR_proxmox_token_secret: ${{ secrets.PROXMOX_TOKEN_SECRET }}
+          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan
+        continue-on-error: false
+
+      - name: Terraform Apply (manual only)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'apply'
+        run: terraform apply -auto-approve
+
+      - name: Terraform Destroy (manual only)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'destroy'
+        run: terraform destroy -auto-approve
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Terraform Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Action: ${{ github.event.inputs.terraform_action || 'auto-apply' }}" >> $GITHUB_STEP_SUMMARY
