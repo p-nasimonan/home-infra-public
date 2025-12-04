@@ -116,23 +116,9 @@
                       clientID: {{ github_client_id }}
                       clientSecret: {{ github_client_secret }}
             
-            # ▼ 権限設定 (argocd-rbac-cm)
+            # ▼ 権限設定 個人利用ならこれでいいでしょう。
             rbac:
-              policy.default: "role:readonly"
-              policy.csv: |
-                # admin ロール定義：リポジトリ、クラスタ、アプリケーション全権限
-                p, role:admin, applications, *, */*, allow
-                p, role:admin, applications, sync, */*, allow
-                p, role:admin, repositories, create, default/https://*, allow
-                p, role:admin, repositories, get, *, allow
-                p, role:admin, repositories, update, *, allow
-                p, role:admin, repositories, delete, *, allow
-                p, role:admin, clusters, get, *, allow
-                p, role:admin, accounts, get, *, allow
-                p, role:admin, accounts, update, *, allow
-                
-                # SSO ユーザーに admin ロール割り当て
-                g, {{ github_admin_username }}, role:admin
+              policy.default:  role:admin
 
             # ▼ その他のパラメータ
             params:
