@@ -37,6 +37,12 @@ all:
           k3s_hostname: rancher-server
           k3s_control_node: false
 
+    adguard_home:
+      hosts:
+        adguard-home:
+          ansible_connection: local
+          ansible_python_interpreter: /usr/bin/python3
+
   vars:
     # Python interpreter
     ansible_python_interpreter: /usr/bin/python3

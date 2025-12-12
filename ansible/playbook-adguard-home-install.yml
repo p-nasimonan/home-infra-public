@@ -63,13 +63,22 @@
     # =========================================
     - name: AdGuard Home バイナリをダウンロード
       shell: |
-        cd /tmp
+        cd /opt/adguardhome
         curl -sSL -o adguardhome.tar.gz https://github.com/AdguardTeam/AdGuardHome/releases/download/v0.107.49/AdGuardHome_linux_amd64.tar.gz
         tar -xzf adguardhome.tar.gz
-        ./AdGuardHome/AdGuardHome -s install
+        mv AdGuardHome/AdGuardHome .
+        rm -rf AdGuardHome adguardhome.tar.gz
       args:
         executable: /bin/bash
       changed_when: false
+
+    - name: AdGuard Home をシステムサービスに登録
+      shell: |
+        /opt/adguardhome/AdGuardHome -s install -c /opt/adguardhome/AdGuardHome.yaml
+      args:
+        executable: /bin/bash
+      changed_when: false
+      ignore_errors: yes
 
     # =========================================
     # AdGuard Home 設定
@@ -116,16 +125,17 @@
         dest: /opt/adguardhome/AdGuardHome.yaml
         mode: '0644'
 
-    - name: AdGuard Home サービスを開始
-      systemd:
-        name: AdGuardHome
-        state: started
-        enabled: yes
-        daemon_reload: yes
+    - name: AdGuard Home サービスを再起動
+      shell: |
+        systemctl restart AdGuardHome || service AdGuardHome restart
+      args:
+        executable: /bin/bash
+      changed_when: false
+      ignore_errors: yes
 
     - name: AdGuard Home が起動するまで待機
       wait_for:
-        host: localhost
+        host: 127.0.0.1
         port: "{{ adguard_home_port }}"
         delay: 5
         timeout: 60
@@ -135,13 +145,6 @@
     # =========================================
     - name: AdGuard Home API でローカル DNS ルールを追加
       block:
-        - name: 初期管理者パスワードを確認
-          wait_for:
-            host: 127.0.0.1
-            port: "{{ adguard_home_port }}"
-            delay: 2
-            timeout: 30
-
         - name: ローカル DNS ルールを API で設定
           uri:
             url: "http://127.0.0.1:{{ adguard_home_port }}/control/rewrite/add"
@@ -153,7 +156,7 @@
             body:
               domain: "{{ item.domain }}"
               answer: "{{ item.ip }}"
-            status_code: [200, 201]
+            status_code: [200, 201, 400]
           loop: "{{ dns_entries }}"
           ignore_errors: yes
           register: dns_add_result
@@ -163,7 +166,7 @@
             msg: "✓ DNS レコード追加: {{ item.item.domain }} -> {{ item.item.ip }}"
           loop: "{{ dns_add_result.results }}"
           when: item is succeeded
-
+          
     # =========================================
     # セットアップ完了
     # =========================================

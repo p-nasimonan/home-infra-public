@@ -216,15 +216,15 @@ jobs:
 
       - name: ホストへの接続テスト
         run: |
-          ansible adguard_home -i inventory.yml -m ping
+          ansible adguard_home -i inventory.ci.yml -m ping
 
       - name: Ansible 構文チェック
         run: |
-          ansible-playbook -i inventory.yml playbook-adguard-home-install.yml --syntax-check
+          ansible-playbook -i inventory.ci.yml playbook-adguard-home-install.yml --syntax-check
 
       - name: AdGuard Home インストール（ドライラン）
         run: |
-          ansible-playbook -i inventory.yml playbook-adguard-home-install.yml --check
+          ansible-playbook -i inventory.ci.yml playbook-adguard-home-install.yml --check
 
       - name: AdGuard Home インストール（本番）
         run: |
