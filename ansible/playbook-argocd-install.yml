@@ -14,7 +14,7 @@
     - argocd
   become: yes
   vars:
-    argocd_domain: "argocd.k.youkan.uk"
+    argocd_domain: "argocd.youkan.uk"
     argocd_namespace: "argocd"
     argocd_chart_version: "9.1.3"
     argocd_cli_version: "v3.2.0"
