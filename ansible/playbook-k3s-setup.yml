@@ -97,11 +97,11 @@
       become: yes
       ignore_errors: yes
 
-    # /etc/hosts に Rancher ドメイン追加
-    - name: /etc/hosts に rancher.youkan.uk を追加
+    # /etc/hosts に K3s ドメイン追加
+    - name: /etc/hosts に *.k.youkan.uk を追加
       lineinfile:
         path: /etc/hosts
-        line: "192.168.0.20 rancher.youkan.uk"
+        line: "192.168.0.20 rancher.k.youkan.uk argocd.k.youkan.uk k.youkan.uk"
         state: present
       become: yes
 
@@ -138,7 +138,7 @@
     - rancher
   become: yes
   vars:
-    rancher_domain: "rancher.youkan.uk"
+    rancher_domain: "rancher.k.youkan.uk"
     rancher_version: "v2.12.1"
     cert_manager_version: "v1.15.3"
     rancher_bootstrap_password: "{{ lookup('env', 'RANCHER_PASSWORD') }}"

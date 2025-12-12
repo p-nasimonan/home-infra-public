@@ -11,7 +11,6 @@
 - name: Install AdGuard Home on LXC Container
   hosts: adguard_home
   become: yes
-  gather_facts: no
   vars:
     adguard_home_version: "latest"
     adguard_home_port: 3000
@@ -20,21 +19,9 @@
     
     # 内向け DNS エントリ（コード管理）
     dns_entries:
-      - domain: "rancher.youkan.uk"
+      - domain: "*.k.youkan.uk"
         ip: "192.168.0.20"
-        description: "Rancher UI"
-      - domain: "argocd.youkan.uk"
-        ip: "192.168.0.20"
-        description: "ArgoCD UI"
-      - domain: "k3s-server-1.youkan.uk"
-        ip: "192.168.0.20"
-        description: "K3s Server 1"
-      - domain: "k3s-server-2.youkan.uk"
-        ip: "192.168.0.21"
-        description: "K3s Server 2"
-      - domain: "k3s-server-3.youkan.uk"
-        ip: "192.168.0.22"
-        description: "K3s Server 3"
+        description: "K3s Services Wildcard (Rancher, ArgoCD, etc.)"
       - domain: "adguard.youkan.uk"
         ip: "192.168.0.30"
         description: "AdGuard Home"
@@ -123,33 +110,6 @@
         timeout: 60
 
     # =========================================
-    # DNS レコード設定（API 経由）
-    # =========================================
-    - name: AdGuard Home API でローカル DNS ルールを追加
-      block:
-        - name: ローカル DNS ルールを API で設定
-          uri:
-            url: "http://127.0.0.1:{{ adguard_home_port }}/control/rewrite/add"
-            method: POST
-            user: admin
-            password: ""
-            force_basic_auth: yes
-            body_format: json
-            body:
-              domain: "{{ item.domain }}"
-              answer: "{{ item.ip }}"
-            status_code: [200, 201, 400]
-          loop: "{{ dns_entries }}"
-          ignore_errors: yes
-          register: dns_add_result
-
-        - name: DNS レコード追加結果を確認
-          debug:
-            msg: "✓ DNS レコード追加: {{ item.item.domain }} -> {{ item.item.ip }}"
-          loop: "{{ dns_add_result.results }}"
-          when: item is succeeded
-          
-    # =========================================
     # セットアップ完了
     # =========================================
     - name: AdGuard Home セットアップ完了
@@ -159,12 +119,10 @@
           - Web UI: http://192.168.0.30:{{ adguard_home_port }}
           - DNS Server: 192.168.0.30:{{ adguard_home_dns_port }}
           
-          【設定済み DNS レコード】
-          {% for entry in dns_entries %}
-          - {{ entry.domain }} -> {{ entry.ip }} ({{ entry.description }})
-          {% endfor %}
-          
           【初期設定】
-          1. http://192.168.0.30:{{ adguard_home_port }} にアクセス
-          2. 管理者パスワードを設定
-          3. /etc/resolv.conf で DNS を 192.168.0.30 に設定
+          1. Web UI にアクセス: http://192.168.0.30:{{ adguard_home_port }}
+          2. 管理者パスワードを設定（初期セットアップウィザード）
+          3. DNS レコード設定: Filters → Custom Filtering Rules で以下を追加
+             {% for entry in dns_entries %}
+             {{ entry.ip }}  {{ entry.domain }}
+             {% endfor %}
