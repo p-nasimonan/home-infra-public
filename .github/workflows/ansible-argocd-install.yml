@@ -19,18 +19,19 @@ on:
 
 jobs:
   # =========================================
-  # Setup: Python & SSH セットアップ
+  # Deploy: ArgoCD インストール
   # =========================================
-  setup:
-    name: Setup - Python & SSH
+  deploy:
+    name: Deploy - ArgoCD Install
     runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     env:
       ANSIBLE_WORK_DIR: ./ansible
 
-    outputs:
-      setup-status: ${{ steps.setup.outputs.status }}
+    defaults:
+      run:
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
 
     steps:
       - name: リポジトリをチェックアウト
@@ -59,32 +60,6 @@ jobs:
           printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H 192.168.0.20 >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: セットアップ完了
-        id: setup
-        run: |
-          echo "status=success" >> $GITHUB_OUTPUT
-          echo "✓ Python, Ansible, SSH セットアップ完了"
-
-  # =========================================
-  # Deploy: ArgoCD インストール
-  # =========================================
-  deploy:
-    name: Deploy - ArgoCD Install
-    needs: setup
-    runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 30
-
-    env:
-      ANSIBLE_WORK_DIR: ./ansible
-
-    defaults:
-      run:
-        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
-
-    steps:
-      - name: リポジトリをチェックアウト
-        uses: actions/checkout@v4
 
       - name: ホストへの接続テスト
         run: |

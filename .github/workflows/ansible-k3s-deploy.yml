@@ -24,18 +24,22 @@ on:
 
 jobs:
   # =========================================
-  # Setup: Python & SSH セットアップ
+  # Step 1: K3s クラスタ セットアップ
   # =========================================
-  setup:
-    name: Setup - Python & SSH
+  deploy-k3s:
+    name: Deploy - K3s Cluster Setup
     runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 15
+    timeout-minutes: 120
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      (github.event.inputs.step == 'k3s' || github.event.inputs.step == 'all')
 
     env:
       ANSIBLE_WORK_DIR: ./ansible
 
-    outputs:
-      setup-status: ${{ steps.setup.outputs.status }}
+    defaults:
+      run:
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
 
     steps:
       - name: リポジトリをチェックアウト
@@ -64,35 +68,6 @@ jobs:
           printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H 192.168.0.20 192.168.0.21 192.168.0.22 >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: セットアップ完了
-        id: setup
-        run: |
-          echo "status=success" >> $GITHUB_OUTPUT
-          echo "✓ Python, Ansible, SSH セットアップ完了"
-
-  # =========================================
-  # Step 1: K3s クラスタ セットアップ
-  # =========================================
-  deploy-k3s:
-    name: Deploy - K3s Cluster Setup
-    needs: setup
-    runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 120
-    if: |
-      github.event_name == 'workflow_dispatch' && 
-      (github.event.inputs.step == 'k3s' || github.event.inputs.step == 'all')
-
-    env:
-      ANSIBLE_WORK_DIR: ./ansible
-
-    defaults:
-      run:
-        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
-
-    steps:
-      - name: リポジトリをチェックアウト
-        uses: actions/checkout@v4
 
       - name: SSH 接続テスト
         run: |
@@ -126,7 +101,7 @@ jobs:
   # =========================================
   deploy-rancher:
     name: Deploy - Rancher on K3s
-    needs: [setup, deploy-k3s]
+    needs: deploy-k3s
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 60
     if: |
@@ -144,6 +119,30 @@ jobs:
     steps:
       - name: リポジトリをチェックアウト
         uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'ansible/requirements.txt'
+
+      - name: Python 依存パッケージをインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ${{ env.ANSIBLE_WORK_DIR }}/requirements.txt
+
+      - name: Ansible ロールをインストール
+        run: |
+          mkdir -p ${{ env.ANSIBLE_WORK_DIR }}/roles
+          ansible-galaxy install -r ${{ env.ANSIBLE_WORK_DIR }}/requirements.yml -p ${{ env.ANSIBLE_WORK_DIR }}/roles -f
+
+      - name: SSH キーをセットアップ
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 192.168.0.20 >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: K3s-server-1 への接続テスト
         run: |
