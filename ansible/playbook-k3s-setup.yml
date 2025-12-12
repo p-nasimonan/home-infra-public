@@ -141,7 +141,7 @@
     rancher_domain: "rancher.youkan.uk"
     rancher_version: "v2.12.1"
     cert_manager_version: "v1.15.3"
-    rancher_bootstrap_password: "{{ rancher_password }}"
+    rancher_bootstrap_password: "{{ lookup('env', 'RANCHER_PASSWORD') }}"
     ansible_python_interpreter: /usr/bin/python3
 
   environment:
