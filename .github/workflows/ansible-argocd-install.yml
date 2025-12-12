@@ -24,7 +24,7 @@ jobs:
   deploy:
     name: Deploy - ArgoCD Install
     runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     env:
       ANSIBLE_WORK_DIR: ./ansible
@@ -64,6 +64,11 @@ jobs:
       - name: ホストへの接続テスト
         run: |
           ansible all -i inventory.yml -m ping
+
+      - name: Kubernetes 接続テスト
+        run: |
+          ansible k3s_servers -i inventory.yml -m shell -a "kubectl cluster-info" || true
+          ansible k3s_servers -i inventory.yml -m shell -a "kubectl get nodes" || true
 
       - name: Ansible 構文チェック
         run: |
