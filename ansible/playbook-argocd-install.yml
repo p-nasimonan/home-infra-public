@@ -86,7 +86,7 @@
             name: argo
             repo_url: "https://argoproj.github.io/argo-helm"
             kubeconfig: /etc/rancher/k3s/k3s.yaml
-            skip_tls_verify: yes
+            insecure_skip_tls_verify: yes
             validate_certs: no
 
         # ArgoCD インストール
@@ -99,7 +99,7 @@
             chart_version: "{{ argocd_chart_version }}"
             update_repo_cache: true
             kubeconfig: /etc/rancher/k3s/k3s.yaml
-            skip_tls_verify: yes
+            insecure_skip_tls_verify: yes
             validate_certs: no
             wait: no
             values:
