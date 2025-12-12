@@ -60,6 +60,7 @@
           - htop
           - net-tools
           - ntp
+          - python3-venv
         state: present
       become: yes
 
