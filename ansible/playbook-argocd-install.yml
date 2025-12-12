@@ -17,6 +17,7 @@
     argocd_domain: "argocd.youkan.uk"
     argocd_namespace: "argocd"
     argocd_chart_version: "9.1.3"
+    argocd_cli_version: "v3.2.0"
     ansible_python_interpreter: /usr/bin/python3
     github_client_id: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_ID') }}"
     github_client_secret: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_SECRET') }}"
@@ -70,6 +71,15 @@
           set_fact:
             ansible_python_interpreter: /opt/ansible-venv/bin/python3
 
+        # Helm ロックリセット（前回の失敗から復帰）
+        - name: 既存の Helm ロックをリセット
+          shell: |
+            kubectl delete secret sh.helm.release.v1.argocd.v1 -n {{ argocd_namespace }} --ignore-not-found=true 2>/dev/null || true
+            kubectl delete secret sh.helm.release.v1.argocd.v2 -n {{ argocd_namespace }} --ignore-not-found=true 2>/dev/null || true
+          environment:
+            KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+          changed_when: false
+
         # Helm インストール
         - name: Helm をインストール
           shell: |
@@ -105,6 +115,7 @@
             values:
               global:
                 domain: "{{ argocd_domain }}"
+              
               server:
                 extraArgs:
                   - --insecure
@@ -118,17 +129,10 @@
                   annotations:
                     traefik.ingress.kubernetes.io/service.serversscheme: http
                   hosts:
-                    - host: "{{ argocd_domain }}"
-                      paths:
-                        - path: /
-                          pathType: Prefix
-              controller:
-                replicas: 1
-              repoServer:
-                replicas: 1
+                    - "{{ argocd_domain }}"
+              
               configs:
                 cm:
-                  # GitHub SSO 設定
                   dex.config: |
                     connectors:
                       - type: github
@@ -137,16 +141,23 @@
                         config:
                           clientID: {{ github_client_id }}
                           clientSecret: {{ github_client_secret }}
-                          orgs:
-                            - name: p-nasimonan
-                  # ローカルログインを無効化
-                  accounts.password.autoGenerate: "false"
+                
                 rbac:
-                  # すべてのユーザーに admin 権限を付与（GitHub SSO経由のみ）
-                  policy.default: role:admin
+                  policy.default: "role:readonly"
                   policy.csv: |
-                    p, admin, *, *, allow
-                    g, {{ github_admin_username }}, admin
+                    g, {{ github_admin_username }}, role:admin
+                
+                params:
+                  application.instanceLabelKey: argocd.argoproj.io/instance
+              
+              redis:
+                enabled: true
+              
+              controller:
+                replicas: 1
+              
+              repoServer:
+                replicas: 1
 
         # ArgoCD 起動確認
         - name: ArgoCD が起動するまで待機
@@ -160,20 +171,29 @@
           delay: 10
 
         # ArgoCD CLI インストール
-        - name: ArgoCD CLI をインストール
+        - name: ArgoCD CLI がインストール済みか確認
+          shell: which argocd
+          register: argocd_cli_check
+          changed_when: false
+          ignore_errors: yes
+
+        - name: ArgoCD CLI をダウンロード・インストール
           shell: |
-            if ! command -v argocd >/dev/null 2>&1; then
-              curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/download/v3.2.0/argocd-linux-amd64
-              chmod +x /usr/local/bin/argocd
-            fi
+            ARGOCD_VERSION="v3.2.0"
+            curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64
+            mv /tmp/argocd /usr/local/bin/argocd
+            chmod +x /usr/local/bin/argocd
           args:
             executable: /bin/bash
-          changed_when: false
+          when: argocd_cli_check.rc != 0
 
         # セットアップ完了
         - name: ArgoCD セットアップ完了
           debug:
-            msg: "✓ ArgoCD は https://{{ argocd_domain }} でアクセス可能です"
+            msg: |
+              ✓ ArgoCD セットアップ完了
+              - URL: https://{{ argocd_domain }}
+              - GitHub SSO: 有効（{{ github_admin_username }} で admin アクセス可能）
 
       when: inventory_hostname == "k3s-server-1"
 
