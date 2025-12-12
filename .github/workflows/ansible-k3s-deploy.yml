@@ -38,17 +38,17 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: 'ansible/requirements.txt'
+          cache-dependency-path: '**/requirements.txt'
 
       - name: Python 依存パッケージをインストール
         run: |
           python -m pip install --upgrade pip
-          pip install -r ${{ env.ANSIBLE_WORK_DIR }}/requirements.txt
+          pip install -r requirements.txt
 
       - name: Ansible ロールをインストール
         run: |
-          mkdir -p ${{ env.ANSIBLE_WORK_DIR }}/roles
-          ansible-galaxy install -r ${{ env.ANSIBLE_WORK_DIR }}/requirements.yml -p ${{ env.ANSIBLE_WORK_DIR }}/roles -f
+          mkdir -p roles
+          ansible-galaxy install -r requirements.yml -p roles -f
 
       - name: SSH キーをセットアップ
         run: |
