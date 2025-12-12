@@ -11,6 +11,7 @@
 - name: Install AdGuard Home on LXC Container
   hosts: adguard_home
   become: yes
+  gather_facts: no
   vars:
     adguard_home_version: "latest"
     adguard_home_port: 3000
@@ -59,22 +60,11 @@
         state: present
 
     # =========================================
-    # AdGuard Home ダウンロード・インストール
+    # AdGuard Home インストール（公式スクリプト使用）
     # =========================================
-    - name: AdGuard Home バイナリをダウンロード
+    - name: AdGuard Home を公式スクリプトでインストール
       shell: |
-        cd /opt/adguardhome
-        curl -sSL -o adguardhome.tar.gz https://github.com/AdguardTeam/AdGuardHome/releases/download/v0.107.49/AdGuardHome_linux_amd64.tar.gz
-        tar -xzf adguardhome.tar.gz
-        mv AdGuardHome/AdGuardHome .
-        rm -rf AdGuardHome adguardhome.tar.gz
-      args:
-        executable: /bin/bash
-      changed_when: false
-
-    - name: AdGuard Home をシステムサービスに登録
-      shell: |
-        /opt/adguardhome/AdGuardHome -s install -c /opt/adguardhome/AdGuardHome.yaml
+        curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh -s -- -v
       args:
         executable: /bin/bash
       changed_when: false
@@ -124,14 +114,6 @@
           schema_version: 14
         dest: /opt/adguardhome/AdGuardHome.yaml
         mode: '0644'
-
-    - name: AdGuard Home サービスを再起動
-      shell: |
-        systemctl restart AdGuardHome || service AdGuardHome restart
-      args:
-        executable: /bin/bash
-      changed_when: false
-      ignore_errors: yes
 
     - name: AdGuard Home が起動するまで待機
       wait_for:
