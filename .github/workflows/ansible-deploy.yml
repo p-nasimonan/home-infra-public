@@ -143,20 +143,13 @@ jobs:
         run: |
           ansible-playbook -i inventory.yml playbook-k3s-setup.yml --syntax-check
 
-      - name: K3s & Rancher セットアップ（ドライラン）
-        if: github.event.inputs.action == 'check' || github.event_name == 'push'
-        run: |
-          ansible-playbook -i inventory.yml playbook-k3s-setup.yml --check -v
-
-      - name: K3s & Rancher セットアップ（本番実行）
-        if: github.event.inputs.action == 'deploy'
+      - name: K3s & Rancher セットアップ
         env:
           RANCHER_PASSWORD: ${{ secrets.RANCHER_PASSWORD }}
         run: |
           ansible-playbook -i inventory.yml playbook-k3s-setup.yml -v
 
       - name: Rancher 起動確認
-        if: github.event.inputs.action == 'deploy'
         run: |
           sleep 30
           ansible k3s_servers -i inventory.yml -m shell \
@@ -167,7 +160,6 @@ jobs:
         if: always()
         run: |
           echo "✅ K3s & Rancher デプロイ完了"
-          echo "- アクション: ${{ github.event.inputs.action || 'check (自動実行)' }}"
 
   # =========================================
   # AdGuard Home インストール
@@ -216,17 +208,13 @@ jobs:
 
       - name: ホストへの接続テスト
         run: |
-          ansible adguard_home -i inventory.ci.yml -m ping
+          ansible adguard_home -i inventory.yml -m ping
 
       - name: Ansible 構文チェック
         run: |
-          ansible-playbook -i inventory.ci.yml playbook-adguard-home-install.yml --syntax-check
+          ansible-playbook -i inventory.yml playbook-adguard-home-install.yml --syntax-check
 
-      - name: AdGuard Home インストール（ドライラン）
-        run: |
-          ansible-playbook -i inventory.ci.yml playbook-adguard-home-install.yml --check
-
-      - name: AdGuard Home インストール（本番）
+      - name: AdGuard Home インストール
         run: |
           ansible-playbook -i inventory.yml playbook-adguard-home-install.yml
 
