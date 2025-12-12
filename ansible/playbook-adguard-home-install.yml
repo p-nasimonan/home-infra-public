@@ -1,0 +1,185 @@
+---
+# ==========================================
+# AdGuard Home のインストール
+# ==========================================
+# 内向け DNS サーバー
+# LXC コンテナ (192.168.0.30) にインストール
+#
+# 実行方法:
+#   ansible-playbook -i inventory.yml playbook-adguard-home-install.yml
+
+- name: Install AdGuard Home on LXC Container
+  hosts: adguard_home
+  become: yes
+  vars:
+    adguard_home_version: "latest"
+    adguard_home_port: 3000
+    adguard_home_dns_port: 53
+    adguard_home_admin_password: "{{ lookup('env', 'ADGUARD_ADMIN_PASSWORD') | default('admin123') }}"
+    
+    # 内向け DNS エントリ（コード管理）
+    dns_entries:
+      - domain: "rancher.youkan.uk"
+        ip: "192.168.0.20"
+        description: "Rancher UI"
+      - domain: "argocd.youkan.uk"
+        ip: "192.168.0.20"
+        description: "ArgoCD UI"
+      - domain: "k3s-server-1.youkan.uk"
+        ip: "192.168.0.20"
+        description: "K3s Server 1"
+      - domain: "k3s-server-2.youkan.uk"
+        ip: "192.168.0.21"
+        description: "K3s Server 2"
+      - domain: "k3s-server-3.youkan.uk"
+        ip: "192.168.0.22"
+        description: "K3s Server 3"
+      - domain: "adguard.youkan.uk"
+        ip: "192.168.0.30"
+        description: "AdGuard Home"
+
+  tasks:
+    # =========================================
+    # システムパッケージ更新
+    # =========================================
+    - name: システムパッケージを更新
+      apt:
+        update_cache: yes
+        upgrade: dist
+        cache_valid_time: 3600
+
+    - name: 必要なパッケージをインストール
+      apt:
+        name:
+          - curl
+          - wget
+          - ca-certificates
+          - systemd
+          - python3-requests
+        state: present
+
+    # =========================================
+    # AdGuard Home ダウンロード・インストール
+    # =========================================
+    - name: AdGuard Home バイナリをダウンロード
+      shell: |
+        cd /tmp
+        curl -sSL -o adguardhome.tar.gz https://github.com/AdguardTeam/AdGuardHome/releases/download/v0.107.49/AdGuardHome_linux_amd64.tar.gz
+        tar -xzf adguardhome.tar.gz
+        ./AdGuardHome/AdGuardHome -s install
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    # =========================================
+    # AdGuard Home 設定
+    # =========================================
+    - name: AdGuard Home 設定ディレクトリを作成
+      file:
+        path: /opt/adguardhome
+        state: directory
+        mode: '0755'
+
+    - name: AdGuard Home コンフィグを配置
+      copy:
+        content: |
+          ---
+          http:
+            address: 0.0.0.0:{{ adguard_home_port }}
+            
+          dns:
+            port: {{ adguard_home_dns_port }}
+            statistics_interval: 1
+            querylog_enabled: true
+            upstream_dns:
+              - 8.8.8.8:53
+              - 1.1.1.1:53
+            
+          filters:
+            - enabled: true
+              url: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
+              name: AdGuard DNS filter
+            - enabled: true
+              url: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+              name: Steven Black's hosts
+          
+          user_rules: []
+          
+          blocked_services: []
+          
+          clients: []
+          
+          log_file: ""
+          verbose: false
+          
+          schema_version: 14
+        dest: /opt/adguardhome/AdGuardHome.yaml
+        mode: '0644'
+
+    - name: AdGuard Home サービスを開始
+      systemd:
+        name: AdGuardHome
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    - name: AdGuard Home が起動するまで待機
+      wait_for:
+        host: localhost
+        port: "{{ adguard_home_port }}"
+        delay: 5
+        timeout: 60
+
+    # =========================================
+    # DNS レコード設定（API 経由）
+    # =========================================
+    - name: AdGuard Home API でローカル DNS ルールを追加
+      block:
+        - name: 初期管理者パスワードを確認
+          wait_for:
+            host: 127.0.0.1
+            port: "{{ adguard_home_port }}"
+            delay: 2
+            timeout: 30
+
+        - name: ローカル DNS ルールを API で設定
+          uri:
+            url: "http://127.0.0.1:{{ adguard_home_port }}/control/rewrite/add"
+            method: POST
+            user: admin
+            password: ""
+            force_basic_auth: yes
+            body_format: json
+            body:
+              domain: "{{ item.domain }}"
+              answer: "{{ item.ip }}"
+            status_code: [200, 201]
+          loop: "{{ dns_entries }}"
+          ignore_errors: yes
+          register: dns_add_result
+
+        - name: DNS レコード追加結果を確認
+          debug:
+            msg: "✓ DNS レコード追加: {{ item.item.domain }} -> {{ item.item.ip }}"
+          loop: "{{ dns_add_result.results }}"
+          when: item is succeeded
+
+    # =========================================
+    # セットアップ完了
+    # =========================================
+    - name: AdGuard Home セットアップ完了
+      debug:
+        msg: |
+          ✓ AdGuard Home セットアップ完了
+          - Web UI: http://192.168.0.30:{{ adguard_home_port }}
+          - DNS Server: 192.168.0.30:{{ adguard_home_dns_port }}
+          
+          【設定済み DNS レコード】
+          {% for entry in dns_entries %}
+          - {{ entry.domain }} -> {{ entry.ip }} ({{ entry.description }})
+          {% endfor %}
+          
+          【初期設定】
+          1. http://192.168.0.30:{{ adguard_home_port }} にアクセス
+          2. 管理者パスワードを設定
+          3. /etc/resolv.conf で DNS を 192.168.0.30 に設定

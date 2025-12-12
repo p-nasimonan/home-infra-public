@@ -27,6 +27,12 @@ all:
           k3s_hostname: k3s-server-3
           k3s_control_node: true
 
+    adguard_home:
+      hosts:
+        adguard-home:
+          ansible_host: 192.168.0.30
+          ansible_user: root
+
   vars:
     # Python interpreter
     ansible_python_interpreter: /usr/bin/python3
