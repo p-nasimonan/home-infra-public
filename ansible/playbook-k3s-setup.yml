@@ -16,31 +16,22 @@
     - setup
     - k3s
   vars:
-    # K3s リリース版（false で最新安定版を使用）
     k3s_release_version: false
-    # HA クラスタ用 embedded etcd 有効化
     k3s_etcd_datastore: true
-    # K3s サーバー設定（制御プレーン）
     k3s_server:
-      # Flannel バックエンド設定
       flannel-backend: vxlan
-      # API サーバー監査ログ設定
       audit-log-maxage: 30
       audit-log-maxbackup: 10
       audit-log-maxsize: 100
-    # K3s エージェント設定（ワーカー）
     k3s_agent:
-      # ノードラベル
       node-label:
         - "node-role=worker"
-    # バリデーション処理をスキップ（必要に応じて）
     k3s_skip_validation: false
-    # Python 3 インタープリタパス
     ansible_python_interpreter: /usr/bin/python3
   
   pre_tasks:
-    # Python がない場合はインストール
-    - name: Python がない場合はブートストラップ
+    # Python ブートストラップ
+    - name: Python3 をブートストラップ
       raw: |
         if command -v python3 >/dev/null 2>&1; then
           exit 0
@@ -49,8 +40,8 @@
         sudo apt-get install -y python3 python3-apt python3-pip
       changed_when: false
 
-    # APT キャッシュ更新とパッケージ更新
-    - name: APT キャッシュ更新とディストリビューション更新
+    # パッケージ更新
+    - name: パッケージをアップデート
       apt:
         update_cache: yes
         upgrade: dist
@@ -58,7 +49,7 @@
         autoclean: yes
       become: yes
 
-    # 必要なパッケージをインストール
+    # 必要パッケージをインストール
     - name: 必要なパッケージをインストール
       apt:
         name:
@@ -72,14 +63,14 @@
         state: present
       become: yes
 
-    # タイムゾーンを Asia/Tokyo に設定
+    # タイムゾーン設定
     - name: タイムゾーンを Asia/Tokyo に設定
       timezone:
         name: Asia/Tokyo
       become: yes
 
-    # IP フォワーディング有効化
-    - name: IP フォワーディング有効化
+    # IP フォワーディング
+    - name: IP フォワーディングを有効化
       sysctl:
         name: net.ipv4.ip_forward
         value: "1"
@@ -87,7 +78,7 @@
         state: present
       become: yes
 
-    # ブリッジ iptables サポート用カーネルモジュールロード
+    # br_netfilter モジュール
     - name: br_netfilter モジュールをロード
       modprobe:
         name: br_netfilter
@@ -95,8 +86,8 @@
       become: yes
       ignore_errors: yes
 
-    # ブリッジネットワーク設定有効化
-    - name: ブリッジネットワーク設定有効化
+    # ブリッジネットワーク設定
+    - name: ブリッジネットワーク iptables サポートを有効化
       sysctl:
         name: net.bridge.bridge-nf-call-iptables
         value: "1"
@@ -105,12 +96,20 @@
       become: yes
       ignore_errors: yes
 
+    # /etc/hosts に Rancher ドメイン追加
+    - name: /etc/hosts に rancher.youkan.uk を追加
+      lineinfile:
+        path: /etc/hosts
+        line: "192.168.0.20 rancher.youkan.uk"
+        state: present
+      become: yes
+
   roles:
     - role: xanmanning.k3s
       become: yes
 
   post_tasks:
-    # K3s が起動完了するまで待機（制御ノードのみ）
+    # K3s 起動確認
     - name: K3s が起動完了するまで待機
       shell: |
         k3s kubectl get nodes
@@ -120,8 +119,8 @@
       delay: 10
       when: inventory_hostname == "k3s-server-1"
 
-    # 制御ノードから kubeconfig を取得
-    - name: 制御ノードから kubeconfig を取得
+    # kubeconfig 取得
+    - name: kubeconfig を取得
       fetch:
         src: /etc/rancher/k3s/k3s.yaml
         dest: ./kubeconfig.yaml
@@ -130,59 +129,28 @@
       when: inventory_hostname == "k3s-server-1"
 
 # ==========================================
-# Rancher のインストール (Helm を使用)
+# Rancher のインストール (Helm)
 # ==========================================
-# K3s-server-1 上に Helm でインストール
-# プライベートIPのみでアクセス（LAN）
-# 外部は Cloudflare Tunnel 経由で rancher.youkan.uk にアクセス可能
-# ==========================================
-- name: Deploy Rancher on K3s-server-1
+- name: Rancher をデプロイ
   hosts: k3s_servers
   tags:
-    - setup
     - rancher
   become: yes
   vars:
-    # ドメイン設定（プライベートアクセス用）
     rancher_domain: "rancher.youkan.uk"
-
-    # Rancher のバージョン
     rancher_version: "v2.12.1"
-
-    # cert-manager のバージョン
     cert_manager_version: "v1.15.3"
-
-    # Rancher ブートストラップパスワード（GitHub Actions Secret から注入）
     rancher_bootstrap_password: "{{ rancher_password }}"
+    ansible_python_interpreter: /usr/bin/python3
 
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
   tasks:
-    # 控え節点（k3s-server-1）のみで実行
-    - name: K3s-server-1 のみで処理を実行
+    # k3s-server-1 のみで実行
+    - name: K3s-server-1 でのみ Rancher をインストール
       block:
-        # Python 3 インタープリタ設定
-        - name: Python3 インタープリタ設定の確認
-          set_fact:
-            ansible_python_interpreter: /usr/bin/python3
-
-        # -----------------------------------------------
-        # 0. Python/pip をインストール（必須）
-        # -----------------------------------------------
-        - name: Python3 と pip3 をインストール
-          apt:
-            name:
-              - python3
-              - python3-pip
-              - python3-venv
-            state: present
-            update_cache: yes
-          become: yes
-
-        # -----------------------------------------------
-        # 1. 下準備: 必要なツール・ライブラリのインストール
-        # -----------------------------------------------
+        # Python 仮想環境セットアップ
         - name: Python 仮想環境を作成
           shell: |
             python3 -m venv /opt/ansible-venv
@@ -190,17 +158,10 @@
             executable: /bin/bash
           changed_when: false
 
-        - name: 仮想環境に pip をアップグレード
+        - name: 仮想環境に必要なパッケージをインストール
           shell: |
             /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
-          args:
-            executable: /bin/bash
-
-        - name: 仮想環境に Ansible 用パッケージをインストール
-          shell: |
-            /opt/ansible-venv/bin/pip install \
-              kubernetes>=21.0.0 \
-              pyyaml>=5.4.1
+            /opt/ansible-venv/bin/pip install kubernetes>=21.0.0 pyyaml>=5.4.1
           args:
             executable: /bin/bash
 
@@ -208,7 +169,8 @@
           set_fact:
             ansible_python_interpreter: /opt/ansible-venv/bin/python3
 
-        - name: Helm インストール (未インストール時)
+        # Helm インストール
+        - name: Helm をインストール
           shell: |
             if ! command -v helm >/dev/null 2>&1; then
               curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -217,28 +179,18 @@
             executable: /bin/bash
           changed_when: false
 
-        - name: Helm バージョン確認
-          shell: helm version --short
-          register: helm_version
-          changed_when: false
-
-        - name: Helm version 情報を表示
-          debug:
-            msg: "{{ helm_version.stdout }}"
-
-        # -----------------------------------------------
-        # 2. Cert-Manager のインストール (Rancher 必須要件)
-        # -----------------------------------------------
+        # Cert-Manager インストール
         - name: Jetstack Helm リポジトリを追加
           kubernetes.core.helm_repository:
             name: jetstack
             repo_url: "https://charts.jetstack.io"
             kubeconfig: /etc/rancher/k3s/k3s.yaml
 
-        - name: Helm リポジトリ更新
+        - name: Helm リポジトリを更新
           shell: helm repo update
           args:
             executable: /bin/bash
+          changed_when: false
 
         - name: cert-manager をインストール
           kubernetes.core.helm:
@@ -253,6 +205,7 @@
             wait: yes
             wait_timeout: 10m
 
+        # Cert-manager 起動確認
         - name: Cert-manager が起動するまで待機
           shell: |
             kubectl get deployment -n cert-manager cert-manager -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0
@@ -263,16 +216,14 @@
           retries: 30
           delay: 10
 
-        # -----------------------------------------------
-        # 3. Rancher 本体のインストール
-        # -----------------------------------------------
+        # Rancher インストール
         - name: Rancher Helm リポジトリを追加
           kubernetes.core.helm_repository:
             name: rancher-latest
             repo_url: "https://releases.rancher.com/server-charts/latest"
             kubeconfig: /etc/rancher/k3s/k3s.yaml
 
-        - name: Rancher Server をインストール
+        - name: Rancher をインストール
           kubernetes.core.helm:
             name: rancher
             chart_ref: rancher-latest/rancher
@@ -293,10 +244,8 @@
             wait: yes
             wait_timeout: 15m
 
-        # -----------------------------------------------
-        # 4. Rancher 起動確認
-        # -----------------------------------------------
-        - name: Rancher deployment が起動するまで待機
+        # Rancher 起動確認
+        - name: Rancher が起動するまで待機
           shell: |
             kubectl get deployment -n cattle-system rancher -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0
           environment:
@@ -306,8 +255,8 @@
           retries: 30
           delay: 10
 
-        - name: Rancher のアクセス情報を表示
+        - name: Rancher セットアップ完了
           debug:
-            msg: "Rancher は https://{{ rancher_domain }} でアクセス可能です（LAN経由 または Cloudflare Tunnel経由）"
+            msg: "✓ Rancher は https://{{ rancher_domain }} でアクセス可能です"
 
       when: inventory_hostname == "k3s-server-1"
