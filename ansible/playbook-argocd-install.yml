@@ -3,35 +3,21 @@
 # ArgoCD のインストール
 # ==========================================
 # GitOps ベースの CD ツール
-# Rancher サーバー（rancher-server）上に Helm でインストール
+# K3s-server-1 上に Helm でインストール
 #
-# 前提条件:
-#   - Rancher が起動している状態
-#   - /etc/hosts に rancher.youkan.uk が設定済み（内部通信用）
-#   - 外部アクセスは Cloudflare Tunnel 経由
-# ==========================================
-- name: Install ArgoCD on Rancher Cluster
-  hosts: rancher_servers
+# 実行方法:
+#   ansible-playbook -i inventory.yml playbook-argocd-install.yml
+
+- name: Install ArgoCD on K3s Cluster
+  hosts: k3s_servers
+  tags:
+    - argocd
+  become: yes
   vars:
-    # ドメイン設定（プライベートアクセス用）
     argocd_domain: "argocd.youkan.uk"
-
-    # ArgoCD namespace
     argocd_namespace: "argocd"
-
-    # 【重要】Helm チャートバージョン
     argocd_chart_version: "9.1.3"
-
-    # CLI ツール用バージョン
-    # Helm チャートのバージョンに合わせる
-    argocd_cli_version: "v3.2.0"
-
-    # GitHub OAuth 設定
-    # GitHub で OAuth App を作成してGitHub Secretsで管理
-    argocd_github_sso_enabled: true
-
-    # GitHub Credentials（ワークフローから自動注入）
-    # コマンドライン: -e "github_client_id=..." -e "github_client_secret=..." -e "github_admin_username=..."
+    ansible_python_interpreter: /usr/bin/python3
     github_client_id: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_ID') }}"
     github_client_secret: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_SECRET') }}"
     github_admin_username: "{{ lookup('env', 'ARGOCD_GITHUB_USERNAME') | default('') }}"
@@ -40,169 +26,131 @@
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
   tasks:
-    # -----------------------------------------------
-    # 前置き：既に Python・kubectl・helm が整備されているため省略
-    # Namespace は Helm の create_namespace: yes で自動作成
-    # -----------------------------------------------
+    # k3s-server-1 のみで実行
+    - name: k3s-server-1 でのみ ArgoCD をインストール
+      block:
+        # Python 仮想環境セットアップ
+        - name: Python 仮想環境を作成
+          shell: |
+            python3 -m venv /opt/ansible-venv
+          args:
+            executable: /bin/bash
+          changed_when: false
 
-    # -----------------------------------------------
-    # 1. ArgoCD Helm リポジトリ追加
-    # -----------------------------------------------
-    - name: ArgoCD Helm リポジトリを追加
-      kubernetes.core.helm_repository:
-        name: argo
-        repo_url: "https://argoproj.github.io/argo-helm"
-        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        - name: 仮想環境に必要なパッケージをインストール
+          shell: |
+            /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
+            /opt/ansible-venv/bin/pip install kubernetes>=21.0.0 pyyaml>=5.4.1
+          args:
+            executable: /bin/bash
 
-    # -----------------------------------------------
-    # 2. ArgoCD をインストール（Helm、Namespace 自動作成）
-    # -----------------------------------------------
-    - name: ArgoCD をインストール（Helm、Namespace 自動作成）
-      kubernetes.core.helm:
-        name: argocd
-        chart_ref: argo/argo-cd
-        release_namespace: "{{ argocd_namespace }}"
-        create_namespace: yes
-        chart_version: "{{ argocd_chart_version }}"
-        update_repo_cache: true
-        kubeconfig: /etc/rancher/k3s/k3s.yaml
-        wait: yes
-        wait_timeout: 15m
-        values:
-          # ---------------------------
-          # 0. グローバル設定（すべてのコンポーネントに反映）
-          # ---------------------------
-          global:
-            domain: "{{ argocd_domain }}"
+        - name: Python インタープリタを仮想環境に設定
+          set_fact:
+            ansible_python_interpreter: /opt/ansible-venv/bin/python3
 
-          # ---------------------------
-          # 1. サーバー基本設定
-          # ---------------------------
-          server:
-            # HTTP のみで動作（SSL 終端は Cloudflare Tunnel に委譲）
-            extraArgs:
-              - --insecure
-            service:
-              # ▼▼▼ ArgoCD Service のポートを明示的に指定 ▼▼▼
-              port: 80          # HTTP ポートをデフォルトにする
-              targetPort: 8080  # Pod が待機しているポート
-              type: ClusterIP
-            # Traefik Ingress（Cloudflare *.youkan.uk → Tunnel → Traefik → ArgoCD）
-            ingress:
-              enabled: true
-              ingressClassName: traefik
-              annotations:
-                # HTTP スキームを使用するよう指示
-                traefik.ingress.kubernetes.io/service.serversscheme: http
-              hosts:
-                - host: "{{ argocd_domain }}"
-                  paths:
-                    - path: /
-                      pathType: Prefix
-          
-          # ---------------------------
-          # 2. 設定周り (SSO, RBAC, Params)
-          # ★すべて 'configs' の下にまとめます
-          # ---------------------------
-          configs:
-            # ▼ SSO設定 (argocd-cm)
-            cm:
-              dex.config: |
-                connectors:
-                  - type: github
-                    id: github
-                    name: GitHub
-                    config:
-                      clientID: {{ github_client_id }}
-                      clientSecret: {{ github_client_secret }}
-            
-            # ▼ 権限設定 個人利用ならこれでいいでしょう。
-            rbac:
-              policy.default:  role:admin
+        # Helm インストール
+        - name: Helm をインストール
+          shell: |
+            if ! command -v helm >/dev/null 2>&1; then
+              curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+            fi
+          args:
+            executable: /bin/bash
+          changed_when: false
 
-            # ▼ その他のパラメータ
-            params:
-              application.instanceLabelKey: argocd.argoproj.io/instance
-              # Insecure モード（HTTP のみ、HTTPS 不使用）
-              server.insecure: "true"
+        # ArgoCD Helm リポジトリ追加
+        - name: ArgoCD Helm リポジトリを追加
+          kubernetes.core.helm_repository:
+            name: argo
+            repo_url: "https://argoproj.github.io/argo-helm"
+            kubeconfig: /etc/rancher/k3s/k3s.yaml
 
-          # HA 構成ではない場合、Redis の永続化を切るとエラー回避
-          redis:
-            enabled: true
-          controller:
-            replicas: 1
-          repoServer:
-            replicas: 1
+        # ArgoCD インストール
+        - name: ArgoCD をインストール
+          kubernetes.core.helm:
+            name: argocd
+            chart_ref: argo/argo-cd
+            release_namespace: "{{ argocd_namespace }}"
+            create_namespace: yes
+            chart_version: "{{ argocd_chart_version }}"
+            update_repo_cache: true
+            kubeconfig: /etc/rancher/k3s/k3s.yaml
+            wait: yes
+            wait_timeout: 15m
+            values:
+              global:
+                domain: "{{ argocd_domain }}"
+              server:
+                extraArgs:
+                  - --insecure
+                service:
+                  port: 80
+                  targetPort: 8080
+                  type: ClusterIP
+                ingress:
+                  enabled: true
+                  ingressClassName: traefik
+                  annotations:
+                    traefik.ingress.kubernetes.io/service.serversscheme: http
+                  hosts:
+                    - host: "{{ argocd_domain }}"
+                      paths:
+                        - path: /
+                          pathType: Prefix
+              controller:
+                replicas: 1
+              repoServer:
+                replicas: 1
+              configs:
+                cm:
+                  # GitHub SSO 設定
+                  dex.config: |
+                    connectors:
+                      - type: github
+                        id: github
+                        name: GitHub
+                        config:
+                          clientID: {{ github_client_id }}
+                          clientSecret: {{ github_client_secret }}
+                          orgs:
+                            - name: p-nasimonan
+                  # ローカルログインを無効化
+                  accounts.password.autoGenerate: "false"
+                rbac:
+                  # すべてのユーザーに admin 権限を付与（GitHub SSO経由のみ）
+                  policy.default: role:admin
+                  policy.csv: |
+                    p, admin, *, *, allow
+                    g, {{ github_admin_username }}, admin
 
-    # -----------------------------------------------
-    # 3. デプロイメント確認
-    # -----------------------------------------------
-    - name: アクセス情報を表示
-      debug:
-        msg: "ArgoCD は https://{{ argocd_domain }} でアクセス可能です（Cloudflare Tunnel 経由）"
+        # ArgoCD 起動確認
+        - name: ArgoCD が起動するまで待機
+          shell: |
+            kubectl get deployment -n {{ argocd_namespace }} argocd-server -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0
+          environment:
+            KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+          register: argocd_replicas
+          until: argocd_replicas.stdout | int > 0
+          retries: 30
+          delay: 10
 
-    # -----------------------------------------------
-    # 4. Ingress デバッグ情報
-    # -----------------------------------------------
-    - name: Ingress リソース情報を取得
-      shell: |
-        kubectl get ingress -n {{ argocd_namespace }} -o yaml
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      register: ingress_info
-      changed_when: false
+        # ArgoCD CLI インストール
+        - name: ArgoCD CLI をインストール
+          shell: |
+            if ! command -v argocd >/dev/null 2>&1; then
+              curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/download/v3.2.0/argocd-linux-amd64
+              chmod +x /usr/local/bin/argocd
+            fi
+          args:
+            executable: /bin/bash
+          changed_when: false
 
-    - name: Ingress 情報を表示
-      debug:
-        msg: "{{ ingress_info.stdout }}"
+        # セットアップ完了
+        - name: ArgoCD セットアップ完了
+          debug:
+            msg: "✓ ArgoCD は https://{{ argocd_domain }} でアクセス可能です"
 
-    - name: Traefik のサービス情報を取得
-      shell: |
-        kubectl get svc -n kube-system -l app.kubernetes.io/name=traefik -o yaml
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      register: traefik_svc
-      changed_when: false
+      when: inventory_hostname == "k3s-server-1"
 
-    - name: Traefik Service 情報を表示
-      debug:
-        msg: "{{ traefik_svc.stdout }}"
-
-    - name: ArgoCD Server サービス情報を取得
-      shell: |
-        kubectl get svc -n {{ argocd_namespace }} -o yaml
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      register: argocd_svc
-      changed_when: false
-
-    - name: ArgoCD Service 情報を表示
-      debug:
-        msg: "{{ argocd_svc.stdout }}"
-
-    - name: ArgoCD Server Pod ログを取得
-      shell: |
-        kubectl logs -n {{ argocd_namespace }} -l app.kubernetes.io/name=argocd-server --tail=50
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      register: argocd_logs
-      changed_when: false
-      ignore_errors: yes
-
-    - name: ArgoCD Server Pod ログを表示
-      debug:
-        msg: "{{ argocd_logs.stdout }}"
-
-    - name: Traefik IngressRoute/IngressClass を確認
-      shell: |
-        kubectl get ingressclass -o yaml
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      register: ingressclass
-      changed_when: false
-
-    - name: IngressClass 情報を表示
-      debug:
-        msg: "{{ ingressclass.stdout }}"
 
 
