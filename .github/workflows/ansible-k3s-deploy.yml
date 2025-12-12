@@ -1,46 +1,41 @@
-name: Ansible K3s Deploy
+name: Ansible K3s/Rancher Deploy
 
 on:
-  # push トリガー（CI用：構文検証のみ）
-  push:
-    branches:
-      - main
-    paths:
-      - 'ansible/**'
-      - '.github/workflows/ansible-k3s-deploy.yml'
-
   # 手動トリガー（デプロイ実行）
   workflow_dispatch:
     inputs:
+      step:
+        description: '実行ステップ（k3s=K3sセットアップ、rancher=Rancherインストール、all=全て）'
+        required: true
+        default: 'k3s'
+        type: choice
+        options:
+          - k3s
+          - rancher
+          - all
       action:
-        description: '実行アクション（check=検証、deploy=デプロイ、register=クラスタ登録）'
+        description: '実行アクション（check=ドライラン、deploy=本番実行）'
         required: true
         default: 'check'
         type: choice
         options:
           - check
           - deploy
-      target_group:
-        description: 'ターゲット（all、k3s_servers、rancher_servers）'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - k3s_servers
-          - rancher_servers
 
 jobs:
   # =========================================
-  # CI: Ansible 構文検証（push時に自動実行）
+  # Setup: Python & SSH セットアップ
   # =========================================
-  ci-validate:
-    name: CI - Ansible Syntax Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  setup:
+    name: Setup - Python & SSH
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 15
 
     env:
       ANSIBLE_WORK_DIR: ./ansible
+
+    outputs:
+      setup-status: ${{ steps.setup.outputs.status }}
 
     steps:
       - name: リポジトリをチェックアウト
@@ -54,37 +49,39 @@ jobs:
           cache-dependency-path: 'ansible/requirements.txt'
 
       - name: Python 依存パッケージをインストール
-        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r ${{ env.ANSIBLE_WORK_DIR }}/requirements.txt
 
       - name: Ansible ロールをインストール
-        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
         run: |
-          mkdir -p ./roles
-          ansible-galaxy install -r requirements.yml -p ./roles -f
-          ansible-galaxy list
+          mkdir -p ${{ env.ANSIBLE_WORK_DIR }}/roles
+          ansible-galaxy install -r ${{ env.ANSIBLE_WORK_DIR }}/requirements.yml -p ${{ env.ANSIBLE_WORK_DIR }}/roles -f
 
-      - name: Ansible 構文チェック（CI用）
-        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+      - name: SSH キーをセットアップ
         run: |
-          ansible-playbook -i inventory.ci.yml playbook-k3s-setup.yml --syntax-check
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 192.168.0.20 192.168.0.21 192.168.0.22 >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: インベントリ検証
-        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+      - name: セットアップ完了
+        id: setup
         run: |
-          ansible-inventory -i inventory.ci.yml --list
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✓ Python, Ansible, SSH セットアップ完了"
 
   # =========================================
-  # Deploy: Ansible K3s デプロイ（手動実行のみ）
+  # Step 1: K3s クラスタ セットアップ
   # =========================================
-  deploy:
-    name: Deploy - Ansible K3s
-    needs: ci-validate
+  deploy-k3s:
+    name: Deploy - K3s Cluster Setup
+    needs: setup
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 120
-    if: github.event_name == 'workflow_dispatch'
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      (github.event.inputs.step == 'k3s' || github.event.inputs.step == 'all')
 
     env:
       ANSIBLE_WORK_DIR: ./ansible
@@ -97,75 +94,106 @@ jobs:
       - name: リポジトリをチェックアウト
         uses: actions/checkout@v4
 
-      - name: Python 3.11 をセットアップ
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: 'ansible/requirements.txt'
-
-      - name: Python 依存パッケージをインストール
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: SSH キーをセットアップ
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
       - name: SSH 接続テスト
         run: |
-          ssh-keyscan -H 192.168.0.20 >> ~/.ssh/known_hosts 2>/dev/null || true
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no youkan@192.168.0.20 "echo '✓ SSH接続成功'"
-
-      - name: Ansible ロールをインストール
-        run: |
-          mkdir -p ./roles
-          ansible-galaxy install -r requirements.yml -p ./roles -f
-          ansible-galaxy list
+          ansible k3s_servers -i inventory.yml -m ping
 
       - name: Ansible 構文チェック
         run: |
           ansible-playbook -i inventory.yml playbook-k3s-setup.yml --syntax-check
 
-      - name: インベントリのホスト確認
-        run: |
-          ansible-inventory -i inventory.yml --list
-
-      - name: ホストへの接続テスト
-        run: |
-          ansible all -i inventory.yml -m ping
-
-      - name: ドライラン実行
+      - name: K3s セットアップ（ドライラン）
         if: github.event.inputs.action == 'check'
         run: |
-          TARGET="${{ github.event.inputs.target_group != 'all' && format('-l {0}', github.event.inputs.target_group) || '' }}"
-          ansible-playbook -i inventory.yml playbook-k3s-setup.yml $TARGET --check -v
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml --check -v
 
-      - name: Ansible プレイブック実行（本番デプロイ）
+      - name: K3s セットアップ（本番実行）
         if: github.event.inputs.action == 'deploy'
+        env:
+          RANCHER_PASSWORD: ${{ secrets.RANCHER_PASSWORD }}
         run: |
-          TARGET="${{ github.event.inputs.target_group != 'all' && format('-l {0}', github.event.inputs.target_group) || '' }}"
-          ansible-playbook -i inventory.yml playbook-k3s-setup.yml $TARGET \
-            --skip-tags register -v
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml -v
 
-      - name: デプロイ結果のサマリー
+      - name: デプロイ完了ログ
         if: always()
         run: |
-          echo "## Ansible デプロイ実行完了"
-          echo "- リポジトリ: ${{ github.repository }}"
-          echo "- ブランチ: ${{ github.ref_name }}"
-          echo "- コミット: ${{ github.sha }}"
-          echo "- 実行者: ${{ github.actor }}"
+          echo "## K3s セットアップ完了"
+          echo "- ステップ: K3s Cluster Setup"
           echo "- アクション: ${{ github.event.inputs.action }}"
-          echo "- 対象グループ: ${{ github.event.inputs.target_group }}"
 
+  # =========================================
+  # Step 2: Rancher インストール（K3s上）
+  # =========================================
+  deploy-rancher:
+    name: Deploy - Rancher on K3s
+    needs: [setup, deploy-k3s]
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 60
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      (github.event.inputs.step == 'rancher' || github.event.inputs.step == 'all') &&
+      (needs.deploy-k3s.result == 'success' || needs.deploy-k3s.result == 'skipped')
+
+    env:
+      ANSIBLE_WORK_DIR: ./ansible
+
+    defaults:
+      run:
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: K3s-server-1 への接続テスト
+        run: |
+          ansible k3s_servers -i inventory.yml -m ping
+
+      - name: Rancher インストール（ドライラン）
+        if: github.event.inputs.action == 'check'
+        run: |
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml \
+            --tags rancher --check -v
+
+      - name: Rancher インストール（本番実行）
+        if: github.event.inputs.action == 'deploy'
+        env:
+          RANCHER_PASSWORD: ${{ secrets.RANCHER_PASSWORD }}
+        run: |
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml \
+            --tags rancher -v
+
+      - name: Rancher 起動確認
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          sleep 30
+          ansible k3s_servers -i inventory.yml -m shell \
+            -a "kubectl get deployment -n cattle-system rancher -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0" \
+            --limit k3s-server-1
+
+      - name: デプロイ完了ログ
+        if: always()
+        run: |
+          echo "## Rancher インストール完了"
+          echo "- ステップ: Rancher Setup on K3s"
+          echo "- アクション: ${{ github.event.inputs.action }}"
+
+  # =========================================
+  # Notify: デプロイ完了通知
+  # =========================================
   notify-success:
-    needs: deploy
+    needs: [deploy-k3s, deploy-rancher]
     runs-on: ubuntu-latest
-    if: success() && github.event_name == 'workflow_dispatch'
+    if: |
+      always() &&
+      github.event_name == 'workflow_dispatch' &&
+      (needs.deploy-k3s.result == 'success' || 
+       needs.deploy-k3s.result == 'skipped' ||
+       needs.deploy-rancher.result == 'success' || 
+       needs.deploy-rancher.result == 'skipped')
     steps:
       - name: デプロイ成功
-        run: echo "✅ Ansible K3s デプロイ完了"
+        run: |
+          echo "✅ Ansible デプロイパイプライン完了"
+          echo "- K3s: ${{ needs.deploy-k3s.result }}"
+          echo "- Rancher: ${{ needs.deploy-rancher.result }}"

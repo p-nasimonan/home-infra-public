@@ -4,16 +4,33 @@ name: Ansible ArgoCD Install
 # トリガー
 # ==========================================
 on:
+  # Ansible ファイル変更時に実行
+  push:
+    branches:
+      - main
+    paths:
+      - 'ansible/playbook-argocd-install.yml'
+      - 'ansible/roles/argocd/**'
+      - 'ansible/inventory.yml'
+      - '.github/workflows/ansible-argocd-install.yml'
+
+  # 手動トリガー
   workflow_dispatch:
 
 jobs:
   # =========================================
-  # CI: Ansible 構文検証
+  # Setup: Python & SSH セットアップ
   # =========================================
-  ci-validate:
-    name: CI - Ansible Syntax Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  setup:
+    name: Setup - Python & SSH
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 15
+
+    env:
+      ANSIBLE_WORK_DIR: ./ansible
+
+    outputs:
+      setup-status: ${{ steps.setup.outputs.status }}
 
     steps:
       - name: リポジトリをチェックアウト
@@ -24,74 +41,58 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: 'ansible/requirements.txt'
 
       - name: Python 依存パッケージをインストール
         run: |
           python -m pip install --upgrade pip
-          pip install ansible kubernetes pyyaml
+          pip install -r ${{ env.ANSIBLE_WORK_DIR }}/requirements.txt
 
       - name: Ansible ロールをインストール
-        working-directory: ansible
         run: |
-          mkdir -p ./roles
-          ansible-galaxy install -r requirements.yml -p ./roles -f
-          ansible-galaxy list
-
-      - name: Ansible 構文チェック
-        working-directory: ansible
-        run: |
-          ansible-playbook -i inventory.ci.yml playbook-argocd-install.yml --syntax-check
-
-  # =========================================
-  # Deploy: ArgoCD インストール
-  # =========================================
-  deploy:
-    name: Deploy - ArgoCD Install
-    needs: ci-validate
-    runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 30
-
-    defaults:
-      run:
-        working-directory: ansible
-
-    steps:
-      - name: リポジトリをチェックアウト
-        uses: actions/checkout@v4
-
-      - name: Python 3.11 をセットアップ
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Python 依存パッケージをインストール
-        run: |
-          python -m pip install --upgrade pip
-          pip install ansible kubernetes pyyaml bcrypt passlib
+          mkdir -p ${{ env.ANSIBLE_WORK_DIR }}/roles
+          ansible-galaxy install -r ${{ env.ANSIBLE_WORK_DIR }}/requirements.yml -p ${{ env.ANSIBLE_WORK_DIR }}/roles -f
 
       - name: SSH キーをセットアップ
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-
-      - name: SSH 接続テスト
-        run: |
           ssh-keyscan -H 192.168.0.20 >> ~/.ssh/known_hosts 2>/dev/null || true
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no youkan@192.168.0.20 "echo '✓ SSH接続成功'"
 
-      - name: Ansible ロールをインストール
+      - name: セットアップ完了
+        id: setup
         run: |
-          mkdir -p ./roles
-          ansible-galaxy install -r requirements.yml -p ./roles -f
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✓ Python, Ansible, SSH セットアップ完了"
 
-      - name: Ansible 構文チェック
-        run: |
-          ansible-playbook -i inventory.yml playbook-argocd-install.yml --syntax-check
+  # =========================================
+  # Deploy: ArgoCD インストール
+  # =========================================
+  deploy:
+    name: Deploy - ArgoCD Install
+    needs: setup
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+
+    env:
+      ANSIBLE_WORK_DIR: ./ansible
+
+    defaults:
+      run:
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
 
       - name: ホストへの接続テスト
         run: |
           ansible all -i inventory.yml -m ping
+
+      - name: Ansible 構文チェック
+        run: |
+          ansible-playbook -i inventory.yml playbook-argocd-install.yml --syntax-check
 
       - name: ArgoCD インストール（本番）
         env:
