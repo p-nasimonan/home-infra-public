@@ -1,0 +1,314 @@
+name: Ansible Deploy
+
+# ==========================================
+# トリガー
+# ==========================================
+on:
+  # Ansible ファイル変更時に自動実行
+  push:
+    branches:
+      - main
+    paths:
+      - 'ansible/playbook-*.yml'
+      - 'ansible/inventory.yml'
+      - 'ansible/requirements.yml'
+      - '.github/workflows/ansible-deploy.yml'
+
+  # 手動トリガー（playbook 選択可能）
+  workflow_dispatch:
+    inputs:
+      playbook:
+        description: '実行するプレイブック'
+        required: false
+        type: choice
+        options:
+          - auto
+          - playbook-k3s-setup.yml
+          - playbook-adguard-home-install.yml
+          - playbook-argocd-install.yml
+      action:
+        description: 'K3s セットアップの場合のアクション（check/deploy）'
+        required: false
+        default: 'check'
+        type: choice
+        options:
+          - check
+          - deploy
+
+jobs:
+  # =========================================
+  # 変更ファイルの判定
+  # =========================================
+  detect:
+    name: Detect Changed Files
+    runs-on: ubuntu-latest
+    outputs:
+      k3s_changed: ${{ steps.detect.outputs.k3s_changed }}
+      adguard_changed: ${{ steps.detect.outputs.adguard_changed }}
+      argocd_changed: ${{ steps.detect.outputs.argocd_changed }}
+      playbook: ${{ steps.detect.outputs.playbook }}
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 変更ファイルを判定
+        id: detect
+        run: |
+          PLAYBOOK="${{ github.event.inputs.playbook }}"
+          
+          if [ "$PLAYBOOK" = "auto" ] || [ -z "$PLAYBOOK" ]; then
+            # Git diff で変更ファイル判定
+            if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E "playbook-k3s-setup.yml|ansible/roles/k3s"; then
+              echo "k3s_changed=true" >> $GITHUB_OUTPUT
+              echo "playbook=playbook-k3s-setup.yml" >> $GITHUB_OUTPUT
+            fi
+            
+            if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E "playbook-adguard-home-install.yml"; then
+              echo "adguard_changed=true" >> $GITHUB_OUTPUT
+              echo "playbook=playbook-adguard-home-install.yml" >> $GITHUB_OUTPUT
+            fi
+            
+            if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E "playbook-argocd-install.yml|ansible/roles/argocd"; then
+              echo "argocd_changed=true" >> $GITHUB_OUTPUT
+              echo "playbook=playbook-argocd-install.yml" >> $GITHUB_OUTPUT
+            fi
+          else
+            # 手動選択の場合
+            echo "playbook=$PLAYBOOK" >> $GITHUB_OUTPUT
+            
+            if [[ "$PLAYBOOK" == *"k3s"* ]]; then
+              echo "k3s_changed=true" >> $GITHUB_OUTPUT
+            fi
+            if [[ "$PLAYBOOK" == *"adguard"* ]]; then
+              echo "adguard_changed=true" >> $GITHUB_OUTPUT
+            fi
+            if [[ "$PLAYBOOK" == *"argocd"* ]]; then
+              echo "argocd_changed=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  # =========================================
+  # K3s & Rancher セットアップ
+  # =========================================
+  k3s:
+    name: Deploy - K3s & Rancher
+    needs: detect
+    if: needs.detect.outputs.k3s_changed == 'true'
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 180
+
+    env:
+      ANSIBLE_WORK_DIR: ./ansible
+
+    defaults:
+      run:
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: '**/requirements.txt'
+
+      - name: Python 依存パッケージをインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ansible ロールをインストール
+        run: |
+          mkdir -p roles
+          ansible-galaxy install -r requirements.yml -p roles -f
+
+      - name: SSH キーをセットアップ
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 192.168.0.20 192.168.0.21 192.168.0.22 >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: SSH 接続テスト
+        run: |
+          ansible k3s_servers -i inventory.yml -m ping
+
+      - name: Ansible 構文チェック
+        run: |
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml --syntax-check
+
+      - name: K3s & Rancher セットアップ（ドライラン）
+        if: github.event.inputs.action == 'check' || github.event_name == 'push'
+        run: |
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml --check -v
+
+      - name: K3s & Rancher セットアップ（本番実行）
+        if: github.event.inputs.action == 'deploy'
+        env:
+          RANCHER_PASSWORD: ${{ secrets.RANCHER_PASSWORD }}
+        run: |
+          ansible-playbook -i inventory.yml playbook-k3s-setup.yml -v
+
+      - name: Rancher 起動確認
+        if: github.event.inputs.action == 'deploy'
+        run: |
+          sleep 30
+          ansible k3s_servers -i inventory.yml -m shell \
+            -a "kubectl get deployment -n cattle-system rancher -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0" \
+            --limit k3s-server-1
+
+      - name: デプロイ完了
+        if: always()
+        run: |
+          echo "✅ K3s & Rancher デプロイ完了"
+          echo "- アクション: ${{ github.event.inputs.action || 'check (自動実行)' }}"
+
+  # =========================================
+  # AdGuard Home インストール
+  # =========================================
+  adguard:
+    name: Deploy - AdGuard Home
+    needs: detect
+    if: needs.detect.outputs.adguard_changed == 'true'
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+
+    env:
+      ANSIBLE_WORK_DIR: ./ansible
+
+    defaults:
+      run:
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: '**/requirements.txt'
+
+      - name: Python 依存パッケージをインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ansible ロールをインストール
+        run: |
+          mkdir -p roles
+          ansible-galaxy install -r requirements.yml -p roles -f
+
+      - name: SSH キーをセットアップ
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 192.168.0.30 >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: ホストへの接続テスト
+        run: |
+          ansible adguard_home -i inventory.yml -m ping
+
+      - name: Ansible 構文チェック
+        run: |
+          ansible-playbook -i inventory.yml playbook-adguard-home-install.yml --syntax-check
+
+      - name: AdGuard Home インストール（ドライラン）
+        run: |
+          ansible-playbook -i inventory.yml playbook-adguard-home-install.yml --check
+
+      - name: AdGuard Home インストール（本番）
+        run: |
+          ansible-playbook -i inventory.yml playbook-adguard-home-install.yml
+
+      - name: インストール完了
+        if: always()
+        run: |
+          echo "✅ AdGuard Home インストール完了"
+          echo "- URL: http://192.168.0.30:3000"
+          echo "- DNS Server: 192.168.0.30:53"
+
+  # =========================================
+  # ArgoCD インストール
+  # =========================================
+  argocd:
+    name: Deploy - ArgoCD
+    needs: detect
+    if: needs.detect.outputs.argocd_changed == 'true'
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 60
+
+    env:
+      ANSIBLE_WORK_DIR: ./ansible
+
+    defaults:
+      run:
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: '**/requirements.txt'
+
+      - name: Python 依存パッケージをインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ansible ロールをインストール
+        run: |
+          mkdir -p roles
+          ansible-galaxy install -r requirements.yml -p roles -f
+
+      - name: SSH キーをセットアップ
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 192.168.0.20 >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: ホストへの接続テスト
+        run: |
+          ansible all -i inventory.yml -m ping
+
+      - name: Kubernetes 接続テスト
+        run: |
+          ansible k3s_servers -i inventory.yml -m shell -a "kubectl cluster-info" || true
+          ansible k3s_servers -i inventory.yml -m shell -a "kubectl get nodes" || true
+
+      - name: Ansible 構文チェック
+        run: |
+          ansible-playbook -i inventory.yml playbook-argocd-install.yml --syntax-check
+
+      - name: ArgoCD インストール（GitHub SSO付き）
+        env:
+          ARGOCD_GITHUB_CLIENT_ID: ${{ secrets.ARGOCD_GITHUB_CLIENT_ID }}
+          ARGOCD_GITHUB_CLIENT_SECRET: ${{ secrets.ARGOCD_GITHUB_CLIENT_SECRET }}
+          ARGOCD_GITHUB_USERNAME: ${{ github.actor }}
+        run: |
+          ansible-playbook -i inventory.yml playbook-argocd-install.yml \
+            -e "github_client_id=${ARGOCD_GITHUB_CLIENT_ID}" \
+            -e "github_client_secret=${ARGOCD_GITHUB_CLIENT_SECRET}" \
+            -e "github_admin_username=${ARGOCD_GITHUB_USERNAME}"
+
+      - name: 実行完了
+        if: always()
+        run: |
+          echo "✅ ArgoCD インストール完了"
+          echo "- URL: https://argocd.youkan.uk"
+          echo "- GitHub SSO: 有効"
