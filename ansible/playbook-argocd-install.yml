@@ -130,6 +130,7 @@
                     traefik.ingress.kubernetes.io/service.serversscheme: http
                   hosts:
                     - "{{ argocd_domain }}"
+                  tls: []
               
               configs:
                 cm:
