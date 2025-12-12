@@ -34,13 +34,14 @@ Terraform + Ansible + ArgoCD + GitHub Actions で自宅インフラ(K3s + GitOps
 
 このプロジェクトでは以下を管理します:
 
-- **Proxmox VE**: 3台 VMs (K3s cluster)
-- **K3s Kubernetes**: HA embedded etcd + Rancher
-- **ArgoCD**: GitOps ベースのアプリケーション管理
+- **Proxmox VE**: 3台 VMs (K3s HA cluster)
+- **K3s Kubernetes**: HA embedded etcd (3ノード)
+- **Rancher**: K3s-server-1 上に Helm でインストール
+- **ArgoCD**: K3s-server-1 上に Helm でインストール（GitOps）
 - **Cloudflare Tunnel**: Ingress Controller 経由で公開
 - **Terraform**: Infrastructure as Code (Proxmox VMs)
 - **Ansible**: K3s + Rancher + ArgoCD 自動デプロイ
-- **GitHub Actions**: CI/CD パイプライン
+- **GitHub Actions**: CI/CD パイプライン（self-hosted runner）
 
 ## 📂 ディレクトリ構成
 

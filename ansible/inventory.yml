@@ -27,14 +27,6 @@ all:
           k3s_hostname: k3s-server-3
           k3s_control_node: true
 
-    rancher_servers:
-      hosts:
-        rancher-server:
-          ansible_host: 192.168.0.30
-          ansible_user: youkan
-          k3s_hostname: rancher-server
-          k3s_control_node: false
-
   vars:
     # Python interpreter
     ansible_python_interpreter: /usr/bin/python3
