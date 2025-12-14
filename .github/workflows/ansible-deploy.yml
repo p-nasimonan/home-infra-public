@@ -41,7 +41,7 @@ jobs:
   # =========================================
   detect:
     name: Detect Changed Files
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     outputs:
       k3s_changed: ${{ steps.detect.outputs.k3s_changed }}
       adguard_changed: ${{ steps.detect.outputs.adguard_changed }}
