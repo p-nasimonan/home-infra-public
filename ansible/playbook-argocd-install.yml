@@ -99,6 +99,32 @@
             insecure_skip_tls_verify: yes
             validate_certs: no
 
+        # 既存の ArgoCD リソースをクリーンアップ
+        - name: 既存の ArgoCD ConfigMap
+          shell: |
+            kubectl delete configmap -n {{ argocd_namespace }} --all --ignore-not-found=true 2>/dev/null || true
+          environment:
+            KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+          changed_when: false
+
+        - name: 既存の Helm Release を削除
+          shell: |
+            helm list -n {{ argocd_namespace }} -q | xargs -r helm delete -n {{ argocd_namespace }} || true
+          args:
+            executable: /bin/bash
+          environment:
+            KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+          changed_when: false
+
+        - name: ArgoCD 名前空間を削除して再作成
+          shell: |
+            kubectl delete namespace {{ argocd_namespace }} --ignore-not-found=true
+            sleep 5
+            kubectl create namespace {{ argocd_namespace }} || true
+          environment:
+            KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+          changed_when: false
+
         # ArgoCD インストール
         - name: ArgoCD をインストール
           kubernetes.core.helm:
