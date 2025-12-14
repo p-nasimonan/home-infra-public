@@ -91,7 +91,8 @@ jobs:
           
           # K3s クラスタ存在確認
           K3S_CLUSTER_EXISTS="false"
-          if kubectl cluster-info >/dev/null 2>&1 && kubectl get nodes >/dev/null 2>&1; then
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          if [ -f "$KUBECONFIG" ] && kubectl cluster-info >/dev/null 2>&1 && kubectl get nodes >/dev/null 2>&1; then
             K3S_CLUSTER_EXISTS="true"
           fi
           echo "k3s_cluster_exists=${K3S_CLUSTER_EXISTS}" >> $GITHUB_OUTPUT
@@ -99,10 +100,6 @@ jobs:
           if [ "$PLAYBOOK" = "auto" ] || [ -z "$PLAYBOOK" ]; then
             # Git diff で変更ファイル判定
             if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E "playbook-k3s-setup.yml|ansible/roles/k3s"; then
-              echo "k3s_changed=true" >> $GITHUB_OUTPUT
-              echo "playbook=playbook-k3s-setup.yml" >> $GITHUB_OUTPUT
-            elif [ "${K3S_CLUSTER_EXISTS}" = "false" ]; then
-              # クラスタが存在しない場合は K3s を強制実行
               echo "k3s_changed=true" >> $GITHUB_OUTPUT
               echo "playbook=playbook-k3s-setup.yml" >> $GITHUB_OUTPUT
             fi
@@ -207,8 +204,8 @@ jobs:
   # =========================================
   adguard:
     name: Deploy - AdGuard Home
-    needs: detect
-    if: needs.detect.outputs.adguard_changed == 'true'
+    needs: [detect, k3s]
+    if: needs.detect.outputs.adguard_changed == 'true' && (needs.k3s.result == 'success' || needs.k3s.result == 'skipped')
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
 
@@ -271,8 +268,8 @@ jobs:
   # =========================================
   argocd:
     name: Deploy - ArgoCD
-    needs: detect
-    if: needs.detect.outputs.argocd_changed == 'true'
+    needs: [detect, k3s]
+    if: needs.detect.outputs.argocd_changed == 'true' && (needs.k3s.result == 'success' || needs.k3s.result == 'skipped')
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 60
 
