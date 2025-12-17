@@ -98,10 +98,15 @@ jobs:
           echo "k3s_cluster_exists=${K3S_CLUSTER_EXISTS}" >> $GITHUB_OUTPUT
           
           if [ "$PLAYBOOK" = "auto" ] || [ -z "$PLAYBOOK" ]; then
-            # Git diff で変更ファイル判定
+            # Auto mode: Git diff で変更ファイル判定
             if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E "playbook-k3s-setup.yml|ansible/roles/k3s"; then
               echo "k3s_changed=true" >> $GITHUB_OUTPUT
               echo "playbook=playbook-k3s-setup.yml" >> $GITHUB_OUTPUT
+            fi
+            
+            # クラスタが存在しない場合は K3s を強制実行
+            if [ "${K3S_CLUSTER_EXISTS}" = "false" ]; then
+              echo "k3s_changed=true" >> $GITHUB_OUTPUT
             fi
             
             if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E "playbook-adguard-home-install.yml"; then
@@ -121,9 +126,13 @@ jobs:
               echo "k3s_changed=true" >> $GITHUB_OUTPUT
             fi
             if [[ "$PLAYBOOK" == *"adguard"* ]]; then
+              # AdGuard 実行前に K3s をチェック
+              echo "k3s_changed=true" >> $GITHUB_OUTPUT
               echo "adguard_changed=true" >> $GITHUB_OUTPUT
             fi
             if [[ "$PLAYBOOK" == *"argocd"* ]]; then
+              # ArgoCD 実行前に K3s をチェック
+              echo "k3s_changed=true" >> $GITHUB_OUTPUT
               echo "argocd_changed=true" >> $GITHUB_OUTPUT
             fi
           fi
@@ -205,7 +214,7 @@ jobs:
   adguard:
     name: Deploy - AdGuard Home
     needs: [detect, k3s]
-    if: needs.detect.outputs.adguard_changed == 'true' && (needs.k3s.result == 'success' || needs.k3s.result == 'skipped')
+    if: needs.detect.outputs.adguard_changed == 'true' && needs.k3s.result == 'success'
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
 
@@ -269,7 +278,7 @@ jobs:
   argocd:
     name: Deploy - ArgoCD
     needs: [detect, k3s]
-    if: needs.detect.outputs.argocd_changed == 'true' && (needs.k3s.result == 'success' || needs.k3s.result == 'skipped')
+    if: needs.detect.outputs.argocd_changed == 'true' && needs.k3s.result == 'success'
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 60
 
