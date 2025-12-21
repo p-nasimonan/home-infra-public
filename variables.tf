@@ -100,21 +100,21 @@ variable "k3s_servers" {
       name       = "k3s-server-1"
       node_name  = "aduki"
       vm_id      = 201
-      clone_node = "monaka"
+      clone_node = "mochi"
       ip_address = "192.168.0.20"
     }
     "server_2" = {
       name       = "k3s-server-2"
       node_name  = "anko"
       vm_id      = 202
-      clone_node = "monaka"
+      clone_node = "mochi"
       ip_address = "192.168.0.21"
     }
     "server_3" = {
       name       = "k3s-server-3"
-      node_name  = "monaka"
+      node_name  = "mochi"
       vm_id      = 203
-      clone_node = "monaka"
+      clone_node = "mochi"
       ip_address = "192.168.0.22"
     }
   }
