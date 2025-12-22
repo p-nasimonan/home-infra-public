@@ -22,6 +22,12 @@
     github_client_id: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_ID') }}"
     github_client_secret: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_SECRET') }}"
     github_admin_username: "{{ lookup('env', 'ARGOCD_GITHUB_USERNAME') | default('') }}"
+    
+    # ==========================================
+    # kube-vip 設定
+    # ==========================================
+    kube_vip_address: "192.168.0.200"
+    argocd_loadbalancer_ip: "{{ kube_vip_address }}"
 
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
@@ -145,18 +151,15 @@
               server:
                 extraArgs:
                   - --insecure
+                # LoadBalancer サービスを使用 (kube-vip VIP 直接接続)
                 service:
                   port: 80
                   targetPort: 8080
-                  type: ClusterIP
+                  type: LoadBalancer
+                  loadBalancerIP: "{{ argocd_loadbalancer_ip }}"
+                # Ingress は無効 (LoadBalancer を使用するため)
                 ingress:
-                  enabled: true
-                  ingressClassName: traefik
-                  annotations:
-                    traefik.ingress.kubernetes.io/service.serversscheme: http
-                  hosts:
-                    - "{{ argocd_domain }}"
-                  tls: []
+                  enabled: false
               
               configs:
                 cm:
@@ -220,8 +223,16 @@
           debug:
             msg: |
               ✓ ArgoCD セットアップ完了
-              - URL: https://{{ argocd_domain }}
-              - GitHub SSO: 有効（{{ github_admin_username }} で admin アクセス可能）
+              
+              === アクセス方法 ===
+              - URL: http://{{ argocd_domain }}
+              - LoadBalancer IP: {{ argocd_loadbalancer_ip }}
+              - GitHub SSO: 有効
+              
+              === DNS 設定 ===
+              {{ argocd_loadbalancer_ip }} {{ argocd_domain }}
+              
+              このエントリを /etc/hosts または AdGuard Home に追加してください
 
       when: inventory_hostname == "k3s-server-1"
 
