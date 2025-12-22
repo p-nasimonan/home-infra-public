@@ -16,6 +16,17 @@
     - setup
     - k3s
   vars:
+    # ==========================================
+    # kube-vip 設定
+    # ==========================================
+    kube_vip_address: "192.168.0.200"
+    kube_vip_interface: "eth0"
+    kube_vip_version: "v0.8.0"
+    kube_vip_domain: "kube-api.youkan.uk"
+
+    # ==========================================
+    # K3s 基本設定
+    # ==========================================
     k3s_release_version: false
     k3s_etcd_datastore: true
     k3s_server:
@@ -23,11 +34,124 @@
       audit-log-maxage: 30
       audit-log-maxbackup: 10
       audit-log-maxsize: 100
+      # kube-vip VIP を TLS SAN に追加
+      tls-san:
+        - "{{ kube_vip_address }}"
+        - "{{ kube_vip_domain }}"
     k3s_agent:
       node-label:
         - "node-role=worker"
     k3s_skip_validation: false
     ansible_python_interpreter: /usr/bin/python3
+
+    # ==========================================
+    # kube-vip マニフェスト自動配置
+    # ==========================================
+    k3s_server_manifests:
+      - name: kube-vip-rbac
+        content: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: kube-vip
+            namespace: kube-system
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: system:kube-vip-role
+          rules:
+            - apiGroups: [""]
+              resources: ["services", "services/status", "nodes", "endpoints"]
+              verbs: ["list", "get", "watch", "update"]
+            - apiGroups: ["coordination.k8s.io"]
+              resources: ["leases"]
+              verbs: ["list", "get", "watch", "update", "create"]
+          ---
+          kind: ClusterRoleBinding
+          apiVersion: rbac.authorization.k8s.io/v1
+          metadata:
+            name: system:kube-vip-binding
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: system:kube-vip-role
+          subjects:
+            - kind: ServiceAccount
+              name: kube-vip
+              namespace: kube-system
+
+      - name: kube-vip-daemonset
+        content: |
+          apiVersion: apps/v1
+          kind: DaemonSet
+          metadata:
+            name: kube-vip-ds
+            namespace: kube-system
+          spec:
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: kube-vip-ds
+            template:
+              metadata:
+                labels:
+                  app.kubernetes.io/name: kube-vip-ds
+              spec:
+                affinity:
+                  nodeAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                      nodeSelectorTerms:
+                      - matchExpressions:
+                        - key: node-role.kubernetes.io/master
+                          operator: Exists
+                      - matchExpressions:
+                        - key: node-role.kubernetes.io/control-plane
+                          operator: Exists
+                containers:
+                - args:
+                  - manager
+                  env:
+                  - name: vip_arp
+                    value: "true"
+                  - name: port
+                    value: "6443"
+                  - name: vip_interface
+                    value: "{{ kube_vip_interface }}"
+                  - name: vip_cidr
+                    value: "32"
+                  - name: cp_enable
+                    value: "true"
+                  - name: cp_namespace
+                    value: kube-system
+                  - name: vip_ddns
+                    value: "false"
+                  - name: svc_enable
+                    value: "true"
+                  - name: address
+                    value: "{{ kube_vip_address }}"
+                  image: ghcr.io/kube-vip/kube-vip:{{ kube_vip_version }}
+                  imagePullPolicy: Always
+                  name: kube-vip
+                  resources: {}
+                  securityContext:
+                    capabilities:
+                      add:
+                      - NET_ADMIN
+                      - NET_RAW
+                  volumeMounts:
+                  - mountPath: /etc/kubernetes/admin.conf
+                    name: kubeconfig
+                hostNetwork: true
+                serviceAccountName: kube-vip
+                tolerations:
+                - effect: NoSchedule
+                  operator: Exists
+                - effect: NoExecute
+                  operator: Exists
+                volumes:
+                - hostPath:
+                    path: /etc/rancher/k3s/k3s.yaml
+                  name: kubeconfig
   
   pre_tasks:
     # Python ブートストラップ
@@ -98,12 +222,17 @@
       ignore_errors: yes
 
     # /etc/hosts に K3s ドメイン追加
-    - name: /etc/hosts に rancher.youkan.uk と argocd.youkan.uk を追加
+    - name: /etc/hosts に K3s 関連ドメインを追加
       lineinfile:
         path: /etc/hosts
-        line: "192.168.0.20 rancher.youkan.uk argocd.youkan.uk"
+        line: "{{ item }}"
         state: present
       become: yes
+      loop:
+        - "192.168.0.20 rancher.youkan.uk argocd.youkan.uk k3s-server-1"
+        - "192.168.0.21 k3s-server-2"
+        - "192.168.0.22 k3s-server-3"
+        - "{{ kube_vip_address }} {{ kube_vip_domain }}"
 
   roles:
     - role: xanmanning.k3s
@@ -139,7 +268,7 @@
   become: yes
   vars:
     rancher_domain: "rancher.youkan.uk"
-    rancher_version: "v2.12.1"
+    rancher_version: "v2.13.1"
     cert_manager_version: "v1.15.3"
     rancher_bootstrap_password: "{{ lookup('env', 'RANCHER_PASSWORD') }}"
     ansible_python_interpreter: /usr/bin/python3
