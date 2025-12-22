@@ -182,7 +182,7 @@ variable "k3s_workers" {
       vm_id           = 211
       clone_node      = "monaka"
       clone_template  = 9003
-      ip_address      = "192.168.0.15"
+      ip_address      = "192.168.0.24"
     }
     "worker_2" = {
       name            = "k3s-worker-2"
