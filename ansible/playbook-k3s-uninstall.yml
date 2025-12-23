@@ -1,0 +1,273 @@
+---
+# ==========================================
+# K3s クラスタ完全アンインストール
+# ==========================================
+# 用途:
+#   - K3s Control Plane サーバーと Worker ノードをすべてクリーンアップ
+#   - etcd, kubelet, k3s サービスをすべて削除
+#   - ディレクトリも完全削除
+#
+# 実行方法:
+#   ansible-playbook -i inventory.yml playbook-k3s-uninstall.yml
+#
+# 警告:
+#   このプレイブックはクラスタを完全に削除します。
+#   データバックアップを取った上で実行してください。
+
+# ==========================================
+# K3s Control Plane (Servers) アンインストール
+# ==========================================
+- name: K3s Control Plane のアンインストール
+  hosts: k3s_servers
+  gather_facts: yes
+  tags:
+    - uninstall
+    - control-plane
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+
+  tasks:
+    - name: "{{ inventory_hostname }} から K3s をアンインストール中..."
+      debug:
+        msg: "K3s サーバーをアンインストール開始: {{ inventory_hostname }}"
+
+    # K3s Server をアンインストール
+    - name: K3s server をアンインストール
+      shell: /usr/local/bin/k3s-uninstall.sh
+      become: yes
+      ignore_errors: yes
+      register: k3s_uninstall_result
+      changed_when: "'Uninstalling' in k3s_uninstall_result.stdout or 'Stopping' in k3s_uninstall_result.stdout"
+
+    # K3s Agent をアンインストール
+    - name: K3s agent をアンインストール
+      shell: /usr/local/bin/k3s-agent-uninstall.sh
+      become: yes
+      ignore_errors: yes
+      register: k3s_agent_uninstall_result
+      changed_when: "'Uninstalling' in k3s_agent_uninstall_result.stdout or 'Stopping' in k3s_agent_uninstall_result.stdout"
+
+    # サービス停止
+    - name: K3s サービスを停止
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+      become: yes
+      ignore_errors: yes
+      loop:
+        - k3s
+        - k3s-init
+
+    # ディレクトリクリーンアップ
+    - name: K3s ディレクトリを削除
+      file:
+        path: "{{ item }}"
+        state: absent
+      become: yes
+      loop:
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /var/lib/kubelet
+        - /opt/cni/bin
+        - /etc/cni/net.d
+
+    # Systemd ファイルのクリーンアップ
+    - name: K3s systemd ユニットファイルを削除
+      file:
+        path: "{{ item }}"
+        state: absent
+      become: yes
+      ignore_errors: yes
+      loop:
+        - /etc/systemd/system/k3s.service
+        - /etc/systemd/system/k3s.service.env
+        - /etc/systemd/system/k3s-init.service
+        - /etc/profile.d/k3s.sh
+
+    - name: Systemd をリロード
+      systemd:
+        daemon_reload: yes
+      become: yes
+
+    # バイナリクリーンアップ
+    - name: K3s バイナリを削除
+      file:
+        path: "{{ item }}"
+        state: absent
+      become: yes
+      ignore_errors: yes
+      loop:
+        - /usr/local/bin/k3s
+        - /usr/local/bin/k3s-uninstall.sh
+        - /usr/local/bin/kubectl
+        - /usr/local/bin/helm
+        - /usr/local/bin/crictl
+
+    # ネットワーク設定のクリーンアップ
+    - name: Flannel ネットワークをフラッシュ
+      shell: |
+        ip link delete flannel.1 2>/dev/null || true
+        ip link delete cni0 2>/dev/null || true
+        ip link delete flannel-v6 2>/dev/null || true
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+
+    - name: iptables ルールをクリア
+      shell: |
+        iptables -F 2>/dev/null || true
+        iptables -X 2>/dev/null || true
+        iptables -F -t nat 2>/dev/null || true
+        iptables -X -t nat 2>/dev/null || true
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+
+    # 完了メッセージ
+    - name: アンインストール完了
+      debug:
+        msg: "✓ K3s サーバー（{{ inventory_hostname }}）を完全アンインストール完了"
+
+# ==========================================
+# K3s Worker ノード アンインストール
+# ==========================================
+- name: K3s Worker ノードのアンインストール
+  hosts: k3s_workers
+  gather_facts: yes
+  tags:
+    - uninstall
+    - workers
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+
+  tasks:
+    - name: "{{ inventory_hostname }} から K3s をアンインストール中..."
+      debug:
+        msg: "K3s ワーカーノードをアンインストール開始: {{ inventory_hostname }}"
+
+    # K3s Agent をアンインストール
+    - name: K3s agent をアンインストール
+      shell: /usr/local/bin/k3s-agent-uninstall.sh
+      become: yes
+      ignore_errors: yes
+      register: k3s_agent_uninstall_result
+      changed_when: "'Uninstalling' in k3s_agent_uninstall_result.stdout or 'Stopping' in k3s_agent_uninstall_result.stdout"
+
+    # K3s Server をアンインストール（念のため）
+    - name: K3s server をアンインストール
+      shell: /usr/local/bin/k3s-uninstall.sh
+      become: yes
+      ignore_errors: yes
+      register: k3s_uninstall_result
+      changed_when: "'Uninstalling' in k3s_uninstall_result.stdout or 'Stopping' in k3s_uninstall_result.stdout"
+
+    # サービス停止
+    - name: K3s サービスを停止
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+      become: yes
+      ignore_errors: yes
+      loop:
+        - k3s-agent
+
+    # ディレクトリクリーンアップ
+    - name: K3s ディレクトリを削除
+      file:
+        path: "{{ item }}"
+        state: absent
+      become: yes
+      loop:
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /var/lib/kubelet
+        - /opt/cni/bin
+        - /etc/cni/net.d
+
+    # Systemd ファイルのクリーンアップ
+    - name: K3s systemd ユニットファイルを削除
+      file:
+        path: "{{ item }}"
+        state: absent
+      become: yes
+      ignore_errors: yes
+      loop:
+        - /etc/systemd/system/k3s-agent.service
+        - /etc/systemd/system/k3s-agent.service.env
+        - /etc/systemd/system/k3s-init.service
+        - /etc/profile.d/k3s.sh
+
+    - name: Systemd をリロード
+      systemd:
+        daemon_reload: yes
+      become: yes
+
+    # バイナリクリーンアップ
+    - name: K3s バイナリを削除
+      file:
+        path: "{{ item }}"
+        state: absent
+      become: yes
+      ignore_errors: yes
+      loop:
+        - /usr/local/bin/k3s
+        - /usr/local/bin/k3s-agent-uninstall.sh
+        - /usr/local/bin/kubectl
+        - /usr/local/bin/helm
+        - /usr/local/bin/crictl
+
+    # ネットワーク設定のクリーンアップ
+    - name: Flannel ネットワークをフラッシュ
+      shell: |
+        ip link delete flannel.1 2>/dev/null || true
+        ip link delete cni0 2>/dev/null || true
+        ip link delete flannel-v6 2>/dev/null || true
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+
+    - name: iptables ルールをクリア
+      shell: |
+        iptables -F 2>/dev/null || true
+        iptables -X 2>/dev/null || true
+        iptables -F -t nat 2>/dev/null || true
+        iptables -X -t nat 2>/dev/null || true
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+
+    # 完了メッセージ
+    - name: アンインストール完了
+      debug:
+        msg: "✓ K3s ワーカーノード（{{ inventory_hostname }}）を完全アンインストール完了"
+
+# ==========================================
+# 完了サマリー
+# ==========================================
+- name: アンインストール完了
+  hosts: localhost
+  gather_facts: no
+  tags:
+    - uninstall
+
+  tasks:
+    - name: 完了メッセージ
+      debug:
+        msg: |
+          ========================================
+          ✓ K3s クラスタ完全アンインストール完了
+          ========================================
+          
+          削除したもの:
+            - K3s Control Plane (etcd, API Server, Controller Manager)
+            - K3s Worker ノード
+            - kubelet, kubectl, helm
+            - 設定ファイル（/etc/rancher/k3s）
+            - データディレクトリ（/var/lib/rancher/k3s）
+            - Flannel ネットワーク設定
+            - iptables ルール
+          
+          再セットアップするには:
+            ansible-playbook -i inventory.yml playbook-k3s-setup.yml

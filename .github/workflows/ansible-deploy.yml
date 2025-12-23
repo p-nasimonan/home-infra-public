@@ -24,6 +24,7 @@ on:
         options:
           - auto
           - playbook-k3s-setup.yml
+          - playbook-k3s-uninstall.yml
           - playbook-adguard-home-install.yml
           - playbook-argocd-install.yml
       action:
@@ -338,3 +339,71 @@ jobs:
           echo "✅ ArgoCD インストール完了"
           echo "- URL: https://argocd.youkan.uk"
           echo "- GitHub SSO: 有効"
+
+  # =========================================
+  # K3s アンインストール
+  # =========================================
+  k3s_uninstall:
+    name: Uninstall - K3s Cluster
+    runs-on: [self-hosted, Linux, X64]
+    if: github.event.inputs.playbook == 'playbook-k3s-uninstall.yml'
+    timeout-minutes: 60
+
+    env:
+      ANSIBLE_WORK_DIR: ./ansible
+
+    defaults:
+      run:
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: '**/requirements.txt'
+
+      - name: Python 依存パッケージをインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ansible ロールをインストール
+        run: |
+          mkdir -p roles
+          ansible-galaxy install -r requirements.yml -p roles -f
+
+      - name: SSH キーをセットアップ
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 192.168.0.20 192.168.0.21 192.168.0.22 192.168.0.23 192.168.0.24 >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: SSH 接続テスト
+        run: |
+          ansible all -i inventory.yml -m ping
+
+      - name: Ansible 構文チェック
+        run: |
+          ansible-playbook -i inventory.yml playbook-k3s-uninstall.yml --syntax-check
+
+      - name: K3s アンインストール（Control Plane）
+        run: |
+          ansible-playbook -i inventory.yml playbook-k3s-uninstall.yml -l k3s_servers -v
+
+      - name: K3s アンインストール（Worker ノード）
+        run: |
+          ansible-playbook -i inventory.yml playbook-k3s-uninstall.yml -l k3s_workers -v
+
+      - name: 完了
+        if: always()
+        run: |
+          echo "✅ K3s クラスタをアンインストールしました"
+          echo "⚠️  Data が完全に削除されました"
+          echo "🔄 再セットアップするには playbook-k3s-setup.yml を実行してください"
+
