@@ -30,9 +30,13 @@ resource "proxmox_virtual_environment_vm" "k3s_server" {
     node_name = each.value.clone_node
   }
 
+  # Graceful shutdown をサポート（destroy時にqemu-guest-agentでシャットダウン）
   agent {
     enabled = true
   }
+
+  # destroy時にVMを停止させる（graceful shutdown を試みる）
+  stop_on_destroy = true
 
   cpu {
     cores   = var.k3s_server_defaults.cpu_cores
@@ -72,6 +76,11 @@ resource "proxmox_virtual_environment_vm" "k3s_server" {
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
+  
+  # destroy時はVMをシャットダウン→60秒待機→強制停止
+  lifecycle {
+    ignore_changes = []
+  }
 }
 
 # ==========================================
@@ -93,9 +102,13 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
     node_name = each.value.clone_node
   }
 
+  # Graceful shutdown をサポート（destroy時にqemu-guest-agentでシャットダウン）
   agent {
     enabled = true
   }
+
+  # destroy時にVMを停止させる（graceful shutdown を試みる）
+  stop_on_destroy = true
 
   cpu {
     cores   = var.k3s_worker_defaults.cpu_cores
@@ -135,6 +148,11 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
   }
 
   tags = ["k3s", "worker", "minecraft", "high-spec"]
+  
+  # destroy時はVMをシャットダウン→60秒待機→強制停止
+  lifecycle {
+    ignore_changes = []
+  }
 }
 
 # ==========================================
