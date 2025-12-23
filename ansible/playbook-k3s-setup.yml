@@ -435,9 +435,7 @@
       register: kube_vip_status
       changed_when: false
       ignore_errors: true
-      delegate_to: "k3s-server-1"
-      delegate_facts: false
-      when: inventory_hostname == "k3s-worker-1"
+      when: inventory_hostname == "k3s-server-1"
 
     - name: Rancher へのアクセス確認
       debug:
