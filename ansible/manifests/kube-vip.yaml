@@ -48,6 +48,8 @@ spec:
       - args:
         - manager
         env:
+        - name: KUBECONFIG
+          value: "/etc/kubernetes/admin.conf"
         - name: vip_arp
           value: "true"
         - name: port
