@@ -26,7 +26,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server" {
 
   clone {
     vm_id     = each.value.clone_template
-    full      = true
+    full      = false
     node_name = each.value.clone_node
   }
 
@@ -89,7 +89,7 @@ resource "proxmox_virtual_environment_vm" "k3s_worker" {
 
   clone {
     vm_id     = each.value.clone_template
-    full      = true
+    full      = false
     node_name = each.value.clone_node
   }
 
