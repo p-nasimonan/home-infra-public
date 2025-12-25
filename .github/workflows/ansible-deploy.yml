@@ -115,6 +115,12 @@ jobs:
             # 手動選択の場合
             echo "playbook=$PLAYBOOK" >> $GITHUB_OUTPUT
             
+            # uninstall の場合は他の job を実行しない
+            if [[ "$PLAYBOOK" == *"uninstall"* ]]; then
+              echo "Uninstall playbook が選択されました。他の job は実行されません。"
+              exit 0
+            fi
+            
             if [[ "$PLAYBOOK" == *"k3s"* ]]; then
               echo "k3s_changed=true" >> $GITHUB_OUTPUT
             fi
