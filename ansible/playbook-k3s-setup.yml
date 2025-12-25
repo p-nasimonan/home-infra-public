@@ -300,6 +300,45 @@
       when: inventory_hostname == "k3s-server-1"
 
 # ==========================================
+# K3s マスターからトークンを取得
+# ==========================================
+# ワーカーがクラスタに参加するために必要なトークンを事前に取得
+- name: K3s Control Plane からトークンを取得
+  hosts: k3s_servers[0]  # k3s-server-1 のみから取得
+  gather_facts: no
+  tags:
+    - setup
+    - k3s
+    - workers
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+
+  tasks:
+    - name: node-token ファイルを読み込み
+      slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: k3s_node_token_raw
+      become: yes
+      ignore_errors: yes
+
+    - name: トークンをデコード
+      set_fact:
+        k3s_node_token: "{{ k3s_node_token_raw.content | b64decode | trim }}"
+      when: k3s_node_token_raw is not skipped
+
+    - name: トークンをすべてのワーカーに共有
+      set_fact:
+        k3s_token: "{{ k3s_node_token }}"
+      delegate_to: "{{ item }}"
+      delegate_facts: true
+      loop: "{{ groups['k3s_workers'] }}"
+      when: k3s_node_token is defined
+
+    - name: "トークン取得完了"
+      debug:
+        msg: "✓ K3s ワーカー参加用トークンを取得しました"
+
+# ==========================================
 # K3s ワーカーノードのセットアップ
 # ==========================================
 # Control Plane機能なしでワーカーノード のみをセットアップ
@@ -325,6 +364,8 @@
     k3s_release_version: false
     k3s_url: "https://{{ kube_vip_address }}:6443"
     k3s_control_node: false
+    # ★ トークンはマスターから取得した値を使用（hostvars で参照）
+    k3s_token: "{{ hostvars[groups['k3s_servers'][0]].get('k3s_node_token', '') }}"
     k3s_agent:
       node-label:
         - "node-role=worker"

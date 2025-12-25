@@ -39,6 +39,10 @@ all:
           ansible_user: youkan
           k3s_hostname: k3s-worker-2
           k3s_control_node: false
+      vars:
+        # ※ 以下のトークンは マスターから自動取得されます
+        # 手動でトークンを指定する場合は以下をコメント解除して値を入力してください
+        # k3s_token: "K10ca8d..." # マスターからの node-token
 
     adguard_home:
       hosts:
