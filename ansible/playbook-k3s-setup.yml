@@ -491,3 +491,65 @@
           Web UI: https://rancher.youkan.uk
       when: inventory_hostname == "k3s-worker-1"
 
+# ==========================================
+# ノード数確認（全ノード参加を検証）
+# ==========================================
+- name: K3s クラスタ ノード確認
+  hosts: k3s_servers[0]
+  gather_facts: no
+  tags:
+    - setup
+    - k3s
+
+  tasks:
+    - name: K3s ノード一覧を取得
+      shell: |
+        /usr/local/bin/kubectl get nodes -o jsonpath='{.items[*].metadata.name}'
+      register: k3s_nodes_list
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      become: yes
+
+    - name: ノード数をカウント
+      set_fact:
+        k3s_nodes_count: "{{ k3s_nodes_list.stdout.split() | length }}"
+        k3s_nodes_names: "{{ k3s_nodes_list.stdout.split() }}"
+
+    - name: 期待されるノード数
+      set_fact:
+        expected_nodes_count: 5  # 3つのControl Plane + 2つのWorker
+        expected_nodes:
+          - k3s-server-1
+          - k3s-server-2
+          - k3s-server-3
+          - k3s-worker-1
+          - k3s-worker-2
+
+    - name: ノード数の検証
+      assert:
+        that:
+          - k3s_nodes_count | int == expected_nodes_count | int
+        fail_msg: |
+          ❌ K3s クラスタに全ノードが参加していません
+          期待: {{ expected_nodes_count }}個のノード
+          実際: {{ k3s_nodes_count }}個のノード
+          参加しているノード: {{ k3s_nodes_names | join(', ') }}
+          欠落ノード: {{ expected_nodes | difference(k3s_nodes_names) | join(', ') if expected_nodes | difference(k3s_nodes_names) else 'なし' }}
+        success_msg: |
+          ✅ K3s クラスタ検証成功！
+          すべてのノードが正常に参加しています
+          参加ノード数: {{ k3s_nodes_count }}個
+          ノード一覧: {{ k3s_nodes_names | join(', ') }}
+
+    - name: ノードの詳細情報を表示
+      shell: |
+        /usr/local/bin/kubectl get nodes -o wide
+      register: k3s_nodes_detail
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      become: yes
+
+    - name: ノード詳細を出力
+      debug:
+        msg: |
+          {{ k3s_nodes_detail.stdout }}
