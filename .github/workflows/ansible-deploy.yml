@@ -27,14 +27,6 @@ on:
           - playbook-k3s-uninstall.yml
           - playbook-adguard-home-install.yml
           - playbook-argocd-install.yml
-      action:
-        description: 'K3s セットアップの場合のアクション（check/deploy）'
-        required: false
-        default: 'check'
-        type: choice
-        options:
-          - check
-          - deploy
 
 jobs:
   # =========================================
