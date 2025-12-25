@@ -368,6 +368,7 @@
     # ★ トークンはマスターから取得した値を使用（hostvars で参照）
     k3s_token: "{{ hostvars[groups['k3s_servers'][0]].get('k3s_node_token', '') }}"
     k3s_server: {}  # ★ ワーカーはサーバー設定を持たない
+    k3s_controller_list: []  # ★ ワーカーはコントローラーリストを空にする（エラー回避）
     k3s_agent:
       node-label:
         - "node-role=worker"
