@@ -61,6 +61,7 @@
     - name: パッケージをアップデート
       apt:
         update_cache: yes
+        cache_valid_time: 3600
         upgrade: dist
         autoremove: yes
         autoclean: yes
@@ -413,6 +414,7 @@
     - name: パッケージをアップデート
       apt:
         update_cache: yes
+        cache_valid_time: 3600
         upgrade: dist
         autoremove: yes
         autoclean: yes
