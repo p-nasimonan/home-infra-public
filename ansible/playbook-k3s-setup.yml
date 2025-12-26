@@ -38,6 +38,8 @@
       tls-san:
         - "{{ kube_vip_address }}"
         - "{{ kube_vip_domain }}"
+      # kube-vip をロードバランサーとして使用するため、デフォルトの servicelb を無効化
+      disable: servicelb
     k3s_agent:
       node-label:
         - "node-role=worker"
@@ -128,16 +130,20 @@
         - "192.168.0.22 k3s-server-3"
         - "{{ kube_vip_address }} {{ kube_vip_domain }}"
 
-  roles:
-    - role: xanmanning.k3s
-      become: yes
-
-  post_tasks:
     # ===================================================================
-    # kube-vip マニフェストを配置
+    # K3sインストール前にkube-vipマニフェストを配置
     # K3s が /var/lib/rancher/k3s/server/manifests/ を監視して自動適用
     # 外部ファイル (manifests/kube-vip.yaml) からテンプレート処理して展開
     # ===================================================================
+    - name: kube-vip マニフェスト用ディレクトリを作成
+      file:
+        path: /var/lib/rancher/k3s/server/manifests
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      become: yes
+
     - name: kube-vip マニフェストを配置
       template:
         src: manifests/kube-vip.yaml
@@ -146,7 +152,12 @@
         group: root
         mode: '0600'
       become: yes
-      when: inventory_hostname == "k3s-server-1"
+
+  roles:
+    - role: xanmanning.k3s
+      become: yes
+
+  post_tasks:
 
     # K3s 起動確認
     - name: K3s が起動完了するまで待機
@@ -166,6 +177,30 @@
         flat: yes
       become: yes
       when: inventory_hostname == "k3s-server-1"
+
+    # ===================================================================
+    # kube-vip Cloud Controller のインストール
+    # Service type LoadBalancer を kube-vip で制御するために必要
+    # ===================================================================
+    - name: kube-vip Cloud Controller をインストール
+      shell: |
+        kubectl apply -f https://raw.githubusercontent.com/kube-vip/kube-vip-cloud-provider/main/manifest/kube-vip-cloud-controller.yaml
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      become: yes
+      when: inventory_hostname == "k3s-server-1"
+
+    - name: kube-vip IP レンジを ConfigMap で設定
+      shell: |
+        kubectl get configmap kubevip -n kube-system >/dev/null 2>&1 && \
+        kubectl patch configmap kubevip -n kube-system -p '{"data":{"range-global": "192.168.0.210-192.168.0.219"}}' || \
+        kubectl create configmap kubevip -n kube-system --from-literal range-global=192.168.0.210-192.168.0.219
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      become: yes
+      when: inventory_hostname == "k3s-server-1"
+      register: kubevip_configmap
+      changed_when: "'created' in kubevip_configmap.stdout or 'patched' in kubevip_configmap.stdout"
 
 # ==========================================
 # Rancher のインストール (Helm)
@@ -390,7 +425,6 @@
       slurp:
         src: /var/lib/rancher/k3s/server/node-token
       register: token_file
-      # ★ここが魔法！ ワーカーのセットアップ中だけど、実行するのはマスター上
       delegate_to: "{{ groups['k3s_servers'][0] }}"
       run_once: true
 

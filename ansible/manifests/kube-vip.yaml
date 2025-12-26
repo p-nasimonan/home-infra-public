@@ -44,12 +44,20 @@ spec:
       labels:
         app.kubernetes.io/name: kube-vip-ds
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/master
+                operator: Exists
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
       containers:
       - args:
         - manager
         env:
-        - name: KUBECONFIG
-          value: "/etc/rancher/k3s/k3s.yaml"
         - name: vip_arp
           value: "true"
         - name: port
@@ -57,19 +65,33 @@ spec:
         - name: vip_interface
           value: "{{ kube_vip_interface }}"
         - name: vip_cidr
-          value: "24"
+          value: "32"
+        - name: dns_mode
+          value: first
         - name: cp_enable
           value: "true"
         - name: cp_namespace
           value: kube-system
-        - name: vip_ddns
-          value: "false"
         - name: svc_enable
           value: "true"
+        - name: svc_leasename
+          value: plndr-svcs-lock
+        - name: vip_leaderelection
+          value: "true"
+        - name: vip_leasename
+          value: plndr-cp-lock
+        - name: vip_leaseduration
+          value: "5"
+        - name: vip_renewdeadline
+          value: "3"
+        - name: vip_retryperiod
+          value: "1"
         - name: address
           value: "{{ kube_vip_address }}"
+        - name: prometheus_server
+          value: ":2112"
         image: ghcr.io/kube-vip/kube-vip:{{ kube_vip_version }}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         name: kube-vip
         resources: {}
         securityContext:
@@ -77,9 +99,6 @@ spec:
             add:
             - NET_ADMIN
             - NET_RAW
-        volumeMounts:
-        - mountPath: /etc/kubernetes/admin.conf
-          name: kubeconfig
       hostNetwork: true
       serviceAccountName: kube-vip
       tolerations:
@@ -87,7 +106,3 @@ spec:
         operator: Exists
       - effect: NoExecute
         operator: Exists
-      volumes:
-      - hostPath:
-          path: /etc/rancher/k3s/k3s.yaml
-        name: kubeconfig
