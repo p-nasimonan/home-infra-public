@@ -357,9 +357,6 @@
     k3s_control_node: false
     k3s_build_cluster: false
     
-    # マスターノードの場所を教えてあげる（
-    k3s_controller_list: "{{ groups['k3s_servers'] }}"
-    
     # 接続先VIP
     kube_vip_address: "192.168.0.200"
     k3s_url: "https://{{ kube_vip_address }}:6443"
@@ -373,6 +370,14 @@
         - "workload=minecraft"
 
   pre_tasks:
+    # ----------------------------------------
+    # 0. Ansible の groups データを確定させる
+    # ----------------------------------------
+    - name: K3s controller list を確定させる
+      set_fact:
+        k3s_controller_list: "{{ groups['k3s_servers'] }}"
+      run_once: true
+
     # ----------------------------------------
     # 1. マスターからトークンを強制的に吸い出す
     # ----------------------------------------
