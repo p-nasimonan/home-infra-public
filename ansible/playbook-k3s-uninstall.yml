@@ -129,6 +129,16 @@
       debug:
         msg: "✓ K3s サーバー（{{ inventory_hostname }}）を完全アンインストール完了"
 
+    # 再起動
+    - name: サーバーを再起動
+      reboot:
+        msg: "K3s アンインストール後の再起動"
+        connect_timeout: 5
+        reboot_timeout: 600
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
+      become: yes
+
 # ==========================================
 # K3s Worker ノード アンインストール
 # ==========================================
@@ -242,6 +252,16 @@
     - name: アンインストール完了
       debug:
         msg: "✓ K3s ワーカーノード（{{ inventory_hostname }}）を完全アンインストール完了"
+
+    # 再起動
+    - name: ワーカーノードを再起動
+      reboot:
+        msg: "K3s アンインストール後の再起動"
+        connect_timeout: 5
+        reboot_timeout: 600
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
+      become: yes
 
 # ==========================================
 # 完了サマリー
