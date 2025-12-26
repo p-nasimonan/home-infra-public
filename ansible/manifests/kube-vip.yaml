@@ -49,7 +49,7 @@ spec:
         - manager
         env:
         - name: KUBECONFIG
-          value: "/etc/kubernetes/admin.conf"
+          value: "/etc/rancher/k3s/k3s.yaml"
         - name: vip_arp
           value: "true"
         - name: port
