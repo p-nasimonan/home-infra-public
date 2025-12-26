@@ -17,6 +17,9 @@ on:
           - playbook-adguard-home-install.yml
           - playbook-argocd-install.yml
 
+# 実行時に選択したプレイブック名を表示
+run-name: Ansible Deploy - ${{ github.event.inputs.playbook }}
+
 jobs:
   # =========================================
   # K3s セットアップ
