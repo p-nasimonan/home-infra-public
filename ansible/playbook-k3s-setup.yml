@@ -365,6 +365,8 @@
     # ★重要: 下の pre_tasks で取得した値をここに代入する
     k3s_token: "{{ k3s_token_fact }}"
 
+    k3s_control_delegate: "k3s-server-1"
+    
     k3s_agent:
       node-label:
         - "node-role=worker"
