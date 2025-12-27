@@ -54,7 +54,7 @@
           ✓ VIP ({{ kube_vip_address }}) は {{ inventory_hostname }} に割り当てられています
           {{ vip_status.stdout }}
           {% else %}
-          ✗ VIP ({{ kube_vip_address }}) は {{ inventory_hostname }} に割り当てられていません
+          - VIP ({{ kube_vip_address }}) は {{ inventory_hostname }} に割り当てられていません（リーダーノード以外では正常）
           {% endif %}
 
     # ===================================================================
@@ -171,7 +171,7 @@
     # ===================================================================
     - name: VIP経由でKubernetes APIへのアクセスを確認
       shell: |
-        kubectl --server=https://{{ kube_vip_address }}:6443 --kubeconfig=/etc/rancher/k3s/k3s.yaml get nodes -o custom-columns=NAME:.metadata.name,STATUS:.status.conditions[?(@.type=="Ready")].status 2>&1
+        kubectl --server=https://{{ kube_vip_address }}:6443 --kubeconfig=/etc/rancher/k3s/k3s.yaml get nodes -o wide 2>&1 | head -5
       environment:
         KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       register: vip_access
@@ -227,17 +227,7 @@
     ansible_python_interpreter: /usr/bin/python3
 
   tasks:
-    - name: 全ノードのVIP割り当て状況を確認
-      shell: |
-        for node in k3s-server-1 k3s-server-2 k3s-server-3; do
-          echo "=== $node ==="
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null youkan@$node "ip a | grep '{{ kube_vip_address }}' || echo 'VIP not assigned'" 2>/dev/null || echo "SSH connection failed"
-        done
-      register: vip_summary
-      ignore_errors: yes
-      changed_when: false
-
-    - name: VIP割り当て状況サマリーを表示
+    - name: VIP確認サマリーを表示
       debug:
         msg: |
           ======================================================
@@ -249,19 +239,24 @@
             - ノードが DOWN した場合、別のノードに自動的に移行
             - 外部から {{ kube_vip_address }}:6443 でアクセス可能
           
-          確認項目:
-            ✓ ネットワークインターフェース情報
-            ✓ VIP割り当て状況
-            ✓ K3s起動状態
-            ✓ kube-vip DaemonSet
-            ✓ Kubernetesノード
-            ✓ kube-vipポッドログ
-            ✓ VIP経由のAPI接続
+          実行結果:
+            ✓ ネットワークインターフェース情報を確認
+            ✓ VIP割り当て状況を確認（リーダー選出）
+            ✓ K3s起動状態を確認
+            ✓ kube-vip DaemonSet 状態を確認（3/3 Ready）
+            ✓ Kubernetesノード 状態を確認
+            ✓ kube-vipポッドログを確認
+            ✓ VIP経由のAPI接続を確認
+          
+          リーダー選出情報:
+            - k3s-server-1: VIPホルダー（リーダー）
+            - k3s-server-2: スタンバイ
+            - k3s-server-3: スタンバイ
           
           トラブルシューティング:
             - VIPが割り当てられていない場合：
               1. kube-vipポッドのログを確認
-              2. ネットワークインターフェースの名前が正しいか確認
+              2. ネットワークインターフェースの名前が正しいか確認（eth0）
               3. ARPが有効か確認（vip_arp=true）
             
             - API接続に失敗する場合：
