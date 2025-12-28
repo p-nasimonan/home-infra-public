@@ -398,12 +398,8 @@
     kube_vip_domain: "kube.youkan.uk"
     k3s_url: "https://192.168.0.200:6443"
     
-    # ★重要: Role が要求するコントロール関連の変数を定義
-    # Jinja2 テンプレートではなく直接リストで指定
-    k3s_controller_list:
-      - k3s-server-1
-      - k3s-server-2
-      - k3s-server-3
+    # ★重要: Role が要求するコントロール関連の変数
+    # k3s_control_delegate のみを指定（トークン取得に使用）
     k3s_control_delegate: "k3s-server-1"
     
     k3s_agent:
