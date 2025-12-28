@@ -393,6 +393,11 @@
     k3s_control_node: false
     k3s_build_cluster: false
     
+    # ★重要: URLは vars に直接指定して Role に確実に認識させる
+    kube_vip_address: "192.168.0.200"
+    kube_vip_domain: "kube.youkan.uk"
+    k3s_url: "https://192.168.0.200:6443"
+    
     k3s_agent:
       node-label:
         - "node-role=worker"
@@ -400,26 +405,15 @@
 
   pre_tasks:
     # ----------------------------------------
-    # 0. Ansible の変数を確定させる
-    # ----------------------------------------
-    - name: K3s 接続先と controller list を確定させる
-      set_fact:
-        kube_vip_address: "192.168.0.200"
-        kube_vip_domain: "kube.youkan.uk"
-        k3s_url: "https://192.168.0.200:6443"
-        k3s_controller_list: "{{ groups['k3s_servers'] }}"
-      run_once: true
-
-    # ----------------------------------------
     # 1. マスターからトークンを強制的に吸い出す
     # ----------------------------------------
     - name: マスターノード (server-1) からトークンを読み取る
       slurp:
         src: /var/lib/rancher/k3s/server/node-token
       register: token_file
-      delegate_to: "{{ groups['k3s_servers'][0] }}"
+      delegate_to: "k3s-server-1"
 
-    - name: 読み取ったトークンを変数にセット
+    - name: トークンを変数にセット
       set_fact:
         k3s_token: "{{ token_file.content | b64decode | trim }}"
 
