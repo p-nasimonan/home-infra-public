@@ -6,7 +6,7 @@
 # Roleの自動連携機能(トークン共有など)を最大限に活用します。
 
 - name: K3s クラスタ構築 (Server & Worker)
-  hosts: all
+  hosts: k3s_servers,k3s_workers
   become: yes
   tags:
     - setup
