@@ -151,10 +151,6 @@
                   ingressClassName: traefik
                   hosts:
                     - "{{ argocd_domain }}"
-                  tls:
-                    - secretName: argocd-tls
-                      hosts:
-                        - "{{ argocd_domain }}"
               
               configs:
                 cm:
