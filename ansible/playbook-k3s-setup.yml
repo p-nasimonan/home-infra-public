@@ -499,7 +499,9 @@
     - name: Role用の変数を強制的にセット (Roleの自動計算を無効化)
       set_fact:
         k3s_controller_list: "{{ groups['k3s_servers'] }}"
-        k3s_primary_control_node: false
+        k3s_primary_control_node: "{{ False }}"
+        ansible_python_interpreter: /usr/bin/python3
+        k3s_control_node: false
 
   roles:
     - role: xanmanning.k3s
