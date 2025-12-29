@@ -392,13 +392,11 @@
     # ----------------------------------------
     k3s_control_node: false
     k3s_build_cluster: false
-    
-    # ★重要: URLは vars に直接指定して Role に確実に認識させる
+
     kube_vip_address: "192.168.0.200"
     kube_vip_domain: "kube.youkan.uk"
     k3s_url: "https://192.168.0.200:6443"
     
-    # ★重要: Role が要求するコントロール関連の変数
     # k3s_control_delegate のみを指定（トークン取得に使用）
     k3s_control_delegate: "k3s-server-1"
     
@@ -420,6 +418,22 @@
     - name: トークンを変数にセット
       set_fact:
         k3s_token: "{{ token_file.content | b64decode | trim }}"
+
+    # ================================================
+    # トークンと接続設定の検証
+    # ================================================
+    - name: 取得したトークンと接続設定を表示（デバッグ用）
+      debug:
+        msg: |
+          ========================================
+          K3s ワーカー接続設定の確認
+          ========================================
+          ホスト: {{ inventory_hostname }}
+          接続先URL: {{ k3s_url }}
+          コントロール委譲先: {{ k3s_control_delegate }}
+          トークン長: {{ k3s_token | length }} 文字
+          トークン先頭: {{ k3s_token[:20] }}...
+          ========================================
 
     # ----------------------------------------
     # 2. Python3 をブートストラップ
@@ -498,48 +512,57 @@
       become: yes
 
   post_tasks:
-    # K3s トークン取得と接続確認
-    - name: K3s Control Plane のトークンを取得
+    # ================================================
+    # K3s 設定ファイルの検証
+    # ================================================
+    - name: config.yaml の内容を表示（デバッグ用）
       slurp:
-        src: /var/lib/rancher/k3s/server/node-token
-      register: k3s_server_node_token
+        src: /etc/rancher/k3s/config.yaml
+      register: k3s_config_raw
       become: yes
-      delegate_to: "k3s-server-1"
-      delegate_facts: false
+      ignore_errors: yes
 
-    - name: K3s クラスタへのワーカー接続を確認
-      shell: |
-        k3s kubectl get nodes
-      register: k3s_nodes
-      changed_when: false
-      delegate_to: "k3s-server-1"
-      delegate_facts: false
-
-    - name: ワーカーノード参加情報を表示
+    - name: 生成された K3s 設定を表示
       debug:
         msg: |
-          ✓ ワーカーノード（{{ inventory_hostname }}）がクラスタに参加しました
-          {{ k3s_nodes.stdout_lines[-3:] }}
-      when: inventory_hostname == "k3s-worker-1"
+          ========================================
+          生成された config.yaml の内容
+          ========================================
+          {{ k3s_config_raw.content | b64decode }}
+          ========================================
+      when: k3s_config_raw is not skipped
 
-    - name: kube-vip が設定されたか確認
+    # ワーカーノード上で実行する確認（delegate_to は不要）
+    - name: ワーカーノードの K3s エージェント状態を確認
       shell: |
-        kubectl get daemonset -n kube-system kube-vip
-      register: kube_vip_status
+        systemctl status k3s-agent
+      register: k3s_agent_status
       changed_when: false
-      ignore_errors: true
-      when: inventory_hostname == "k3s-server-1"
+      become: yes
+      ignore_errors: yes
 
-    - name: Rancher へのアクセス確認
+    - name: ワーカーノード参加完了メッセージを表示
       debug:
         msg: |
-          ✓ Rancher から以下のノードが操作可能です：
-            - Control Plane: k3s-server-1, k3s-server-2, k3s-server-3
-            - Worker: k3s-worker-1, k3s-worker-2
-          
-          API Access: https://192.168.0.200:6443 (kube-vip)
-          Web UI: https://rancher.youkan.uk
-      when: inventory_hostname == "k3s-worker-1"
+          ✓ ワーカーノード（{{ inventory_hostname }}）の K3s エージェントが起動しました
+          {{ k3s_agent_status.stdout_lines[0:3] | join('\n') }}
+      when: k3s_agent_status.rc == 0
+
+    - name: ワーカーノードの kubeconfig 確認
+      stat:
+        path: /etc/rancher/k3s/k3s.yaml
+      register: k3s_config
+      become: yes
+
+    - name: kubeconfig の存在確認
+      debug:
+        msg: |
+          {% if k3s_config.stat.exists %}
+          ✓ kubeconfig が存在します
+          {% else %}
+          ✗ kubeconfig が見つかりません
+          {% endif %}
+
 
 # ==========================================
 # ノード数確認（全ノード参加を検証）
