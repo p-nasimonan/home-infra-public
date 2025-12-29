@@ -90,7 +90,7 @@ spec:
           value: "{{ kube_vip_address }}"
         - name: prometheus_server
           value: ":2112"
-        image: ghcr.io/kube-vip/kube-vip:False
+        image: ghcr.io/kube-vip/kube-vip:{{ kube_vip_version }}
         imagePullPolicy: IfNotPresent
         name: kube-vip
         resources: {}

@@ -18,7 +18,7 @@
     kube_vip_address: "192.168.0.200"
     kube_vip_interface: "eth0"
     kube_vip_domain: "kube.youkan.uk"
-    kube_vip_version: false
+    kube_vip_version: "v0.8.0"
     k3s_release_version: false
     
     # ★重要: ワーカーはここ(VIP)に接続しに行きます
