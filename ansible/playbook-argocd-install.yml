@@ -145,11 +145,12 @@
               server:
                 extraArgs:
                   - --insecure
-                # LoadBalancer サービスを使用 (kube-vip が自動割り当て)
+                # LoadBalancer サービスを使用 (kube-vip VIP 直接接続)
                 service:
                   port: 80
                   targetPort: 8080
                   type: LoadBalancer
+                  loadBalancerIP: "{{ argocd_loadbalancer_ip }}"
                 # Ingress は無効 (LoadBalancer を使用するため)
                 ingress:
                   enabled: false
@@ -212,16 +213,6 @@
           when: argocd_cli_check.rc != 0
 
         # セットアップ完了
-        - name: ArgoCD LoadBalancer IP を確認
-          shell: |
-            kubectl get svc -n {{ argocd_namespace }} argocd-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-          environment:
-            KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-          register: argocd_lb_ip
-          retries: 10
-          delay: 5
-          until: argocd_lb_ip.stdout | length > 0
-
         - name: ArgoCD セットアップ完了
           debug:
             msg: |
@@ -229,16 +220,13 @@
               
               === アクセス方法 ===
               - URL: http://{{ argocd_domain }}
-              - LoadBalancer IP: {{ argocd_lb_ip.stdout }}
+              - LoadBalancer IP: {{ argocd_loadbalancer_ip }}
               - GitHub SSO: 有効
               
-              === Cloudflare DNS 設定 ===
-              {{ argocd_lb_ip.stdout }}  {{ argocd_domain }}
+              === DNS 設定 ===
+              {{ argocd_loadbalancer_ip }} {{ argocd_domain }}
               
-              Cloudflare で以下の A レコードを作成してください:
-              - 名前: {{ argocd_domain }}
-              - IP: {{ argocd_lb_ip.stdout }}
-              - Proxy: DNS のみ（オレンジ雲）
+              このエントリを /etc/hosts または AdGuard Home に追加してください
 
       when: inventory_hostname == "k3s-server-1"
 
