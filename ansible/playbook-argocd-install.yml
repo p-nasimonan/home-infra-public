@@ -145,6 +145,10 @@
               server:
                 extraArgs:
                 - --insecure  # httpのみにする
+                service:
+                  port: 80          # HTTP ポートをデフォルトにする
+                  targetPort: 8080  # Pod が待機しているポート
+                  type: ClusterIP
                 # Ingress を使用 (Traefik がロードバランシング)
                 ingress:
                   enabled: true
