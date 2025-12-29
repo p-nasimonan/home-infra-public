@@ -392,6 +392,7 @@
     # ----------------------------------------
     k3s_control_node: false
     k3s_build_cluster: false
+    k3s_skip_validation: false
 
     kube_vip_address: "192.168.0.200"
     kube_vip_domain: "kube.youkan.uk"
