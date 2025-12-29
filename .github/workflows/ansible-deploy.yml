@@ -17,10 +17,6 @@ on:
           - playbook-adguard-home-install.yml
           - playbook-argocd-install.yml
           - playbook-check-kubevip.yml
-      tags:
-        description: '実行するタグ（カンマ区切り、空の場合は全体実行）例: workers,setup'
-        required: false
-        type: string
 
 # 実行時に選択したプレイブック名を表示
 run-name: Ansible Deploy - ${{ github.event.inputs.playbook }}
@@ -127,19 +123,13 @@ jobs:
           ARGOCD_GITHUB_CLIENT_ID: ${{ secrets.ARGOCD_GITHUB_CLIENT_ID }}
           ARGOCD_GITHUB_CLIENT_SECRET: ${{ secrets.ARGOCD_GITHUB_CLIENT_SECRET }}
         run: |
-          # タグ指定がある場合は --tags を追加
-          TAGS_OPTION=""
-          if [[ -n "${{ github.event.inputs.tags }}" ]]; then
-            TAGS_OPTION="--tags ${{ github.event.inputs.tags }}"
-          fi
-          
           # ArgoCD用の追加引数を設定
           EXTRA_ARGS=""
           if [[ "${{ env.PLAYBOOK_FILE }}" == "playbook-argocd-install.yml" ]]; then
             EXTRA_ARGS="-e github_client_id=${ARGOCD_GITHUB_CLIENT_ID} -e github_client_secret=${ARGOCD_GITHUB_CLIENT_SECRET} -e github_admin_username=${{ github.actor }}"
           fi
           
-          ansible-playbook -i inventory.yml "${{ env.PLAYBOOK_FILE }}" ${TAGS_OPTION} -v ${EXTRA_ARGS}
+          ansible-playbook -i inventory.yml "${{ env.PLAYBOOK_FILE }}" -v ${EXTRA_ARGS}
 
       - name: 実行完了メッセージ
         if: success()
