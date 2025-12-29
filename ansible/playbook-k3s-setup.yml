@@ -399,6 +399,7 @@
     
     # k3s_control_delegate のみを指定（トークン取得に使用）
     k3s_control_delegate: "k3s-server-1"
+    k3s_controller_list: "{{ groups['k3s_servers'] }}"
     
     k3s_agent:
       node-label:
