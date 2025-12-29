@@ -465,3 +465,186 @@
     - name: Rancher セットアップ完了
       debug:
         msg: "✓ Rancher は https://{{ rancher_domain }} でアクセス可能です"
+
+
+# ==========================================
+# Cloudflare Tunnel (cloudflared) のインストール
+# ==========================================
+- name: Cloudflare Tunnel をデプロイ
+  hosts: k3s_servers[0]
+  tags:
+    - cloudflare
+  become: yes
+  vars:
+    cloudflare_tunnel_token: "{{ lookup('env', 'CLOUDFLARE_TUNNEL_TOKEN') }}"
+    cloudflare_namespace: "cloudflare"
+    ansible_python_interpreter: /usr/bin/python3
+
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+  tasks:
+    - name: Cloudflare Tunnel トークンを確認
+      assert:
+        that:
+          - cloudflare_tunnel_token | length > 0
+        fail_msg: "❌ CLOUDFLARE_TUNNEL_TOKEN が設定されていません"
+
+    # 名前空間作成
+    - name: Cloudflare 名前空間を作成
+      shell: |
+        kubectl get namespace {{ cloudflare_namespace }} >/dev/null 2>&1 || \
+        kubectl create namespace {{ cloudflare_namespace }}
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      changed_when: false
+
+    # シークレット作成
+    - name: Cloudflare Tunnel トークンを保存
+      shell: |
+        kubectl create secret generic cloudflare-tunnel-token \
+          --from-literal=tunnel-token="{{ cloudflare_tunnel_token }}" \
+          -n {{ cloudflare_namespace }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      changed_when: false
+
+    # Deployment デプロイ
+    - name: Cloudflare Tunnel Deployment をデプロイ
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: cloudflared
+            namespace: "{{ cloudflare_namespace }}"
+            labels:
+              app: cloudflared
+          spec:
+            replicas: 2
+            strategy:
+              type: RollingUpdate
+              rollingUpdate:
+                maxSurge: 1
+                maxUnavailable: 0
+            selector:
+              matchLabels:
+                app: cloudflared
+            template:
+              metadata:
+                labels:
+                  app: cloudflared
+              spec:
+                serviceAccountName: cloudflared
+                containers:
+                  - name: cloudflared
+                    image: cloudflare/cloudflared:latest
+                    imagePullPolicy: Always
+                    args:
+                      - tunnel
+                      - run
+                    env:
+                      - name: TUNNEL_TOKEN
+                        valueFrom:
+                          secretKeyRef:
+                            name: cloudflare-tunnel-token
+                            key: tunnel-token
+                    livenessProbe:
+                      httpGet:
+                        path: /ready
+                        port: 2000
+                      initialDelaySeconds: 10
+                      periodSeconds: 10
+                    resources:
+                      requests:
+                        cpu: 100m
+                        memory: 128Mi
+                      limits:
+                        cpu: 500m
+                        memory: 512Mi
+                nodeSelector:
+                  node-role: worker
+
+    # ServiceAccount と Role 作成
+    - name: Cloudflare ServiceAccount を作成
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: cloudflared
+            namespace: "{{ cloudflare_namespace }}"
+
+    - name: Cloudflare ClusterRole を作成
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: present
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: cloudflared
+          rules:
+            - apiGroups: [""]
+              resources: ["services"]
+              verbs: ["get", "list", "watch"]
+            - apiGroups: [""]
+              resources: ["configmaps"]
+              verbs: ["get", "list", "watch"]
+
+    - name: Cloudflare ClusterRoleBinding を作成
+      kubernetes.core.k8s:
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        state: present
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: cloudflared
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: cloudflared
+          subjects:
+            - kind: ServiceAccount
+              name: cloudflared
+              namespace: "{{ cloudflare_namespace }}"
+
+    # デプロイメント起動確認
+    - name: Cloudflare Tunnel が起動するまで待機
+      shell: |
+        kubectl get deployment -n {{ cloudflare_namespace }} cloudflared -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: cloudflared_replicas
+      until: cloudflared_replicas.stdout | int >= 1
+      retries: 30
+      delay: 10
+
+    # ステータス確認
+    - name: Cloudflare Tunnel ポッド一覧を表示
+      shell: |
+        kubectl get pods -n {{ cloudflare_namespace }} -o wide
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: cloudflared_pods
+
+    - name: Cloudflare Tunnel セットアップ完了
+      debug:
+        msg: |
+          ✓ Cloudflare Tunnel セットアップ完了
+          
+          === デプロイメント情報 ===
+          名前空間: {{ cloudflare_namespace }}
+          レプリカ: {{ cloudflared_replicas.stdout }}
+          
+          ポッド一覧:
+          {{ cloudflared_pods.stdout }}
+          
+          === ログ確認コマンド ===
+          kubectl logs -n {{ cloudflare_namespace }} -l app=cloudflared -f

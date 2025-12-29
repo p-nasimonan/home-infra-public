@@ -122,6 +122,7 @@ jobs:
           RANCHER_PASSWORD: ${{ secrets.RANCHER_PASSWORD }}
           ARGOCD_GITHUB_CLIENT_ID: ${{ secrets.ARGOCD_GITHUB_CLIENT_ID }}
           ARGOCD_GITHUB_CLIENT_SECRET: ${{ secrets.ARGOCD_GITHUB_CLIENT_SECRET }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
         run: |
           # ArgoCD用の追加引数を設定
           EXTRA_ARGS=""
@@ -160,6 +161,12 @@ jobs:
               echo "📍 VIP: 192.168.0.200"
               ;;
           esac
+          
+          # Cloudflare Tunnel が含まれている場合
+          if grep -q "cloudflare" "${{ env.PLAYBOOK_FILE }}"; then
+            echo ""
+            echo "📍 Cloudflare Tunnel: https://one.dash.cloudflare.com"
+          fi
 
       - name: エラーログ表示
         if: failure()

@@ -22,12 +22,6 @@
     github_client_id: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_ID') }}"
     github_client_secret: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_SECRET') }}"
     github_admin_username: "{{ lookup('env', 'ARGOCD_GITHUB_USERNAME') | default('') }}"
-    
-    # ==========================================
-    # kube-vip 設定
-    # ==========================================
-    kube_vip_address: "192.168.0.200"
-    argocd_loadbalancer_ip: "{{ kube_vip_address }}"
 
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
@@ -151,12 +145,11 @@
               server:
                 extraArgs:
                   - --insecure
-                # LoadBalancer サービスを使用 (kube-vip VIP 直接接続)
+                # LoadBalancer サービスを使用 (kube-vip が自動割り当て)
                 service:
                   port: 80
                   targetPort: 8080
                   type: LoadBalancer
-                  loadBalancerIP: "{{ argocd_loadbalancer_ip }}"
                 # Ingress は無効 (LoadBalancer を使用するため)
                 ingress:
                   enabled: false
@@ -219,6 +212,16 @@
           when: argocd_cli_check.rc != 0
 
         # セットアップ完了
+        - name: ArgoCD LoadBalancer IP を確認
+          shell: |
+            kubectl get svc -n {{ argocd_namespace }} argocd-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+          environment:
+            KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+          register: argocd_lb_ip
+          retries: 10
+          delay: 5
+          until: argocd_lb_ip.stdout | length > 0
+
         - name: ArgoCD セットアップ完了
           debug:
             msg: |
@@ -226,13 +229,16 @@
               
               === アクセス方法 ===
               - URL: http://{{ argocd_domain }}
-              - LoadBalancer IP: {{ argocd_loadbalancer_ip }}
+              - LoadBalancer IP: {{ argocd_lb_ip.stdout }}
               - GitHub SSO: 有効
               
-              === DNS 設定 ===
-              {{ argocd_loadbalancer_ip }} {{ argocd_domain }}
+              === Cloudflare DNS 設定 ===
+              {{ argocd_lb_ip.stdout }}  {{ argocd_domain }}
               
-              このエントリを /etc/hosts または AdGuard Home に追加してください
+              Cloudflare で以下の A レコードを作成してください:
+              - 名前: {{ argocd_domain }}
+              - IP: {{ argocd_lb_ip.stdout }}
+              - Proxy: DNS のみ（オレンジ雲）
 
       when: inventory_hostname == "k3s-server-1"
 
