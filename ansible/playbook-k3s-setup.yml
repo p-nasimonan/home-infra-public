@@ -136,7 +136,7 @@
         state: present
       become: yes
       loop:
-        - "192.168.0.20 rancher.youkan.uk argocd.youkan.uk k3s-server-1"
+        - "192.168.0.20 k3s-server-1"
         - "192.168.0.21 k3s-server-2"
         - "192.168.0.22 k3s-server-3"
         - "{{ kube_vip_address }} {{ kube_vip_domain }}"
