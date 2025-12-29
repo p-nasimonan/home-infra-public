@@ -18,7 +18,6 @@
     argocd_namespace: "argocd"
     argocd_chart_version: "9.1.3"
     argocd_cli_version: "v3.2.0"
-    argocd_loadbalancer_ip: "192.168.0.211"  # 固定 IP（Rancher が .210 を使用）
     ansible_python_interpreter: /usr/bin/python3
     github_client_id: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_ID') }}"
     github_client_secret: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_SECRET') }}"
@@ -146,15 +145,16 @@
               server:
                 extraArgs:
                   - --insecure
-                # LoadBalancer サービスを使用 (kube-vip VIP 直接接続)
-                service:
-                  port: 80
-                  targetPort: 8080
-                  type: LoadBalancer
-                  loadBalancerIP: "{{ argocd_loadbalancer_ip }}"
-                # Ingress は無効 (LoadBalancer を使用するため)
+                # Ingress を使用 (Traefik がロードバランシング)
                 ingress:
-                  enabled: false
+                  enabled: true
+                  ingressClassName: traefik
+                  hosts:
+                    - "{{ argocd_domain }}"
+                  tls:
+                    - secretName: argocd-tls
+                      hosts:
+                        - "{{ argocd_domain }}"
               
               configs:
                 cm:
@@ -214,15 +214,29 @@
           when: argocd_cli_check.rc != 0
 
         # セットアップ完了
-        - name: ArgoCD LoadBalancer IP を確認
+        - name: ArgoCD サービス情報を確認
           shell: |
-            kubectl get svc -n {{ argocd_namespace }} argocd-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+            kubectl get svc -n {{ argocd_namespace }} argocd-server -o wide
           environment:
             KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-          register: argocd_lb_ip
-          retries: 10
-          delay: 5
-          until: argocd_lb_ip.stdout | length > 0
+          register: argocd_svc_info
+          changed_when: false
+
+        - name: ArgoCD サービス情報を表示
+          debug:
+            msg: "{{ argocd_svc_info.stdout }}"
+
+        - name: ArgoCD Ingress を確認
+          shell: |
+            kubectl get ingress -n {{ argocd_namespace }}
+          environment:
+            KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+          register: argocd_ingress_info
+          changed_when: false
+
+        - name: ArgoCD Ingress 情報を表示
+          debug:
+            msg: "{{ argocd_ingress_info.stdout }}"
 
         - name: ArgoCD セットアップ完了
           debug:
@@ -231,15 +245,22 @@
               
               === アクセス方法 ===
               - URL: http://{{ argocd_domain }}
-              - LoadBalancer IP: {{ argocd_lb_ip.stdout }}
+              - Traefik Ingress: 有効
               - GitHub SSO: 有効
               
+              === アクセス先 ===
+              Traefik LoadBalancer IP: 192.168.0.210
+              
+              === デフォルト認証情報 ===
+              初回ログインパスワードを取得:
+              kubectl -n {{ argocd_namespace }} get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+              
               === Cloudflare DNS 設定 ===
-              {{ argocd_lb_ip.stdout }}  {{ argocd_domain }}
+              192.168.0.210  {{ argocd_domain }}
               
               Cloudflare で以下の A レコードを作成してください:
               - 名前: {{ argocd_domain }}
-              - IP: {{ argocd_lb_ip.stdout }}
+              - IP: 192.168.0.210
               - Proxy: DNS のみ（オレンジ雲）
 
       when: inventory_hostname == "k3s-server-1"
