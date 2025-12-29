@@ -432,6 +432,8 @@
           ホスト: {{ inventory_hostname }}
           接続先URL: {{ k3s_url }}
           コントロール委譲先: {{ k3s_control_delegate }}
+          コントローラーリスト: {{ k3s_controller_list }}
+          コントローラー数: {{ k3s_controller_list | length }}
           トークン長: {{ k3s_token | length }} 文字
           トークン先頭: {{ k3s_token[:20] }}...
           ========================================
