@@ -103,6 +103,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Ansible ロールをインストール
+        if: ${{ github.event.inputs.playbook == 'playbook-k3s-setup.yml' || github.event.inputs.playbook == 'playbook-k3s-uninstall.yml' }}
         run: |
           mkdir -p roles
           ansible-galaxy install -r requirements.yml -p roles -f
