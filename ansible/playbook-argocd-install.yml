@@ -144,6 +144,7 @@
               
               server:
                 extraArgs:
+                - --insecure  # httpのみにする
                 # Ingress を使用 (Traefik がロードバランシング)
                 ingress:
                   enabled: true
