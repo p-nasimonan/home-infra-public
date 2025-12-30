@@ -149,6 +149,9 @@
                   port: 80          # HTTP ポートをデフォルトにする
                   targetPort: 8080  # Pod が待機しているポート
                   type: ClusterIP
+                  annotations:
+                    # HTTP スキームを使用するよう指示
+                    traefik.ingress.kubernetes.io/service.serversscheme: http
                 # Ingress を使用 (Traefik がロードバランシング)
                 ingress:
                   enabled: true
