@@ -169,9 +169,7 @@
                           redirectURL: http://{{ argocd_domain }}/api/dex/callback
                 
                 rbac:
-                  policy.default: "role:readonly"
-                  policy.csv: |
-                    g, "{{ github_admin_username }}", role:admin
+                  policy.default: "role:admin" # 個人開発なら誰でもadminが良い
                 
                 params:
                   application.instanceLabelKey: argocd.argoproj.io/instance
