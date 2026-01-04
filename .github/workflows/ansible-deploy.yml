@@ -173,6 +173,11 @@ jobs:
               echo "📍 URL: https://argocd.youkan.uk"
               echo "📍 GitHub SSO: 有効"
               ;;
+            playbook-argocd-upgrade.yml)
+              echo "✅ ArgoCD アップグレード完了"
+              echo "📍 URL: https://argocd.youkan.uk"
+              echo "⚠️  既存アプリケーションは保持されています"
+              ;;
             playbook-check-kubevip.yml)
               echo "✅ kube-vip VIP ステータス確認完了"
               echo "📍 VIP: 192.168.0.200"

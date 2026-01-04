@@ -169,7 +169,7 @@
                         config:
                           clientID: "{{ github_client_id }}"
                           clientSecret: "{{ github_client_secret }}"
-                          redirectURL: http://{{ argocd_domain }}/api/dex/callback
+                          redirectURL: https://{{ argocd_domain }}/api/dex/callback
                 
                 rbac:
                   policy.default: "role:admin" # 個人開発なら誰でもadminが良い
@@ -245,7 +245,7 @@
               ✓ ArgoCD セットアップ完了
               
               === アクセス方法 ===
-              - URL: http://{{ argocd_domain }}
+              - URL: https://{{ argocd_domain }}
               - Traefik Ingress: 有効
               - GitHub SSO: 有効
               
