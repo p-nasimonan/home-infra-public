@@ -19,12 +19,6 @@
     
     # 内向け DNS エントリ（コード管理）
     dns_entries:
-      - domain: "rancher.youkan.uk"
-        ip: "192.168.0.20"
-        description: "Rancher UI"
-      - domain: "argocd.youkan.uk"
-        ip: "192.168.0.20"
-        description: "ArgoCD UI"
       - domain: "adguard.youkan.uk"
         ip: "192.168.0.30"
         description: "AdGuard Home"
