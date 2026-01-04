@@ -16,6 +16,7 @@ on:
           - playbook-k3s-uninstall.yml
           - playbook-adguard-home-install.yml
           - playbook-argocd-install.yml
+          - playbook-argocd-upgrade.yml
           - playbook-check-kubevip.yml
       tags:
         description: '実行するタグ (カンマ区切り、空白でスキップ)'
@@ -59,6 +60,11 @@ jobs:
               ;;
             playbook-argocd-install.yml)
               echo "playbook_name=Deploy - ArgoCD" >> $GITHUB_OUTPUT
+              echo "hosts=k3s_servers" >> $GITHUB_OUTPUT
+              echo "timeout=60" >> $GITHUB_OUTPUT
+              ;;
+            playbook-argocd-upgrade.yml)
+              echo "playbook_name=Upgrade - ArgoCD (既存データ保持)" >> $GITHUB_OUTPUT
               echo "hosts=k3s_servers" >> $GITHUB_OUTPUT
               echo "timeout=60" >> $GITHUB_OUTPUT
               ;;
