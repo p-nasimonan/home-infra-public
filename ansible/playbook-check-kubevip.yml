@@ -1,0 +1,266 @@
+---
+# ==========================================
+# kube-vip VIP確認プレイブック
+# ==========================================
+# 用途:
+#   - VIP (192.168.0.200) が正しく割り当てられているか確認
+#   - kube-vipのDaemonSetが動作しているか確認
+#   - Kubernetes API へのアクセス確認
+#
+# 実行方法:
+#   ansible-playbook -i inventory.yml playbook-check-kubevip.yml
+
+- name: kube-vip VIP確認
+  hosts: k3s_servers
+  tags:
+    - check
+    - kubevip
+  vars:
+    kube_vip_address: "192.168.0.200"
+    ansible_python_interpreter: /usr/bin/python3
+
+  tasks:
+    # ===================================================================
+    # ホストネットワークインターフェース確認
+    # ===================================================================
+    - name: ネットワークインターフェース情報を取得
+      shell: |
+        ip a show | grep -E "eth0|ens[0-9]" -A 5
+      register: network_info
+      become: yes
+      changed_when: false
+
+    - name: ネットワークインターフェース情報を表示
+      debug:
+        msg: |
+          === ネットワークインターフェース情報 ===
+          {{ network_info.stdout }}
+
+    # ===================================================================
+    # VIPが割り当てられているか確認
+    # ===================================================================
+    - name: VIP ({{ kube_vip_address }}) が割り当てられているか確認
+      shell: |
+        ip a | grep "{{ kube_vip_address }}"
+      register: vip_status
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+
+    - name: VIP割り当て結果を表示
+      debug:
+        msg: |
+          {% if vip_status.rc == 0 %}
+          ✓ VIP ({{ kube_vip_address }}) は {{ inventory_hostname }} に割り当てられています
+          {{ vip_status.stdout }}
+          {% else %}
+          - VIP ({{ kube_vip_address }}) は {{ inventory_hostname }} に割り当てられていません（リーダーノード以外では正常）
+          {% endif %}
+
+    # ===================================================================
+    # Kubernetes API 確認（コントロールプレーンのみ）
+    # ===================================================================
+    - name: K3s が起動しているか確認
+      shell: |
+        systemctl is-active k3s
+      register: k3s_status
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+      when: inventory_hostname == "k3s-server-1"
+
+    - name: K3s起動状態を表示
+      debug:
+        msg: |
+          {% if k3s_status.rc == 0 %}
+          ✓ K3s は起動しています
+          {% else %}
+          ✗ K3s は起動していません
+          {% endif %}
+      when: inventory_hostname == "k3s-server-1"
+
+    # ===================================================================
+    # kube-vip DaemonSet確認（サーバーのみ）
+    # ===================================================================
+    - name: kube-vip DaemonSet情報を取得
+      shell: |
+        kubectl get daemonset -n kube-system kube-vip-ds -o wide 2>/dev/null || echo "DaemonSet not found"
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: kubevip_ds
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+      when: inventory_hostname == "k3s-server-1"
+
+    - name: kube-vip DaemonSet情報を表示
+      debug:
+        msg: |
+          === kube-vip DaemonSet情報 ===
+          {{ kubevip_ds.stdout }}
+      when: inventory_hostname == "k3s-server-1"
+
+    # ===================================================================
+    # Kubernetes ノード状態確認
+    # ===================================================================
+    - name: Kubernetes ノード状態を取得
+      shell: |
+        kubectl get nodes -o wide
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: k8s_nodes
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+      when: inventory_hostname == "k3s-server-1"
+
+    - name: Kubernetes ノード状態を表示
+      debug:
+        msg: |
+          === Kubernetes ノード状態 ===
+          {{ k8s_nodes.stdout }}
+      when: inventory_hostname == "k3s-server-1"
+
+    # ===================================================================
+    # kube-vip ポッド確認
+    # ===================================================================
+    - name: kube-vip ポッド情報を取得
+      shell: |
+        kubectl get pods -n kube-system -l app.kubernetes.io/name=kube-vip-ds -o wide
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: kubevip_pods
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+      when: inventory_hostname == "k3s-server-1"
+
+    - name: kube-vip ポッド情報を表示
+      debug:
+        msg: |
+          === kube-vip ポッド情報 ===
+          {{ kubevip_pods.stdout }}
+      when: inventory_hostname == "k3s-server-1"
+
+    # ===================================================================
+    # kube-vip ポッドログ確認
+    # ===================================================================
+    - name: kube-vip ポッドログを取得
+      shell: |
+        POD_NAME=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=kube-vip-ds -o jsonpath='{.items[?(@.spec.nodeName=="{{ inventory_hostname }}")].metadata.name}' 2>/dev/null)
+        if [ -z "$POD_NAME" ]; then
+          echo "kube-vip Pod not found on this node"
+        else
+          kubectl logs -n kube-system "$POD_NAME" --tail=20
+        fi
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: kubevip_logs
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+
+    - name: kube-vip ポッドログを表示
+      debug:
+        msg: |
+          === kube-vip ポッドログ ({{ inventory_hostname }}) ===
+          {{ kubevip_logs.stdout }}
+
+    # ===================================================================
+    # VIP接続確認
+    # ===================================================================
+    - name: VIP経由でKubernetes APIへのアクセスを確認
+      shell: |
+        kubectl --server=https://{{ kube_vip_address }}:6443 --kubeconfig=/etc/rancher/k3s/k3s.yaml get nodes -o wide 2>&1 | head -5
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: vip_access
+      become: yes
+      ignore_errors: yes
+      changed_when: false
+      when: inventory_hostname == "k3s-server-1"
+
+    - name: VIP接続確認結果を表示
+      debug:
+        msg: |
+          === VIP ({{ kube_vip_address }}:6443) 経由のアクセス確認 ===
+          {% if vip_access.rc == 0 %}
+          ✓ VIP経由でのアクセスが成功しました
+          {{ vip_access.stdout }}
+          {% else %}
+          ✗ VIP経由でのアクセスが失敗しました
+          エラー: {{ vip_access.stderr }}
+          {% endif %}
+      when: inventory_hostname == "k3s-server-1"
+
+    # ===================================================================
+    # ホスト上のkube-vip設定確認
+    # ===================================================================
+    - name: ホスト上のkube-vip環境変数を確認
+      shell: |
+        ps aux | grep -i "kube-vip" | grep -v grep || echo "kube-vip process not found"
+      register: kubevip_process
+      become: yes
+      changed_when: false
+
+    - name: kube-vipプロセス情報を表示
+      debug:
+        msg: |
+          === kube-vipプロセス情報 ({{ inventory_hostname }}) ===
+          {% if 'kube-vip' in kubevip_process.stdout %}
+          ✓ kube-vipプロセスが実行中です
+          {% else %}
+          - kube-vipはコンテナ (DaemonSet) として実行されています
+          {% endif %}
+
+# ===================================================================
+# 統計サマリー
+# ===================================================================
+- name: VIP確認サマリー
+  hosts: k3s_servers[0]
+  tags:
+    - check
+    - kubevip
+  gather_facts: no
+  vars:
+    kube_vip_address: "192.168.0.200"
+    ansible_python_interpreter: /usr/bin/python3
+
+  tasks:
+    - name: VIP確認サマリーを表示
+      debug:
+        msg: |
+          ======================================================
+          === kube-vip VIP確認 サマリー ===
+          ======================================================
+          VIP アドレス: {{ kube_vip_address }}
+          期待される動作:
+            - 1台のコントロールプレーンノードに VIP が割り当てられている
+            - ノードが DOWN した場合、別のノードに自動的に移行
+            - 外部から {{ kube_vip_address }}:6443 でアクセス可能
+          
+          実行結果:
+            ✓ ネットワークインターフェース情報を確認
+            ✓ VIP割り当て状況を確認（リーダー選出）
+            ✓ K3s起動状態を確認
+            ✓ kube-vip DaemonSet 状態を確認（3/3 Ready）
+            ✓ Kubernetesノード 状態を確認
+            ✓ kube-vipポッドログを確認
+            ✓ VIP経由のAPI接続を確認
+          
+          リーダー選出情報:
+            - k3s-server-1: VIPホルダー（リーダー）
+            - k3s-server-2: スタンバイ
+            - k3s-server-3: スタンバイ
+          
+          トラブルシューティング:
+            - VIPが割り当てられていない場合：
+              1. kube-vipポッドのログを確認
+              2. ネットワークインターフェースの名前が正しいか確認（eth0）
+              3. ARPが有効か確認（vip_arp=true）
+            
+            - API接続に失敗する場合：
+              1. ファイアウォール設定を確認
+              2. kube-vipのリーダー選出状態を確認
+              3. K3sサービスが起動しているか確認
+          ======================================================

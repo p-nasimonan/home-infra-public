@@ -27,13 +27,28 @@ all:
           k3s_hostname: k3s-server-3
           k3s_control_node: true
 
-    rancher_servers:
+    k3s_workers:
       hosts:
-        rancher-server:
-          ansible_host: 192.168.0.30
+        k3s-worker-1:
+          ansible_host: 192.168.0.23
           ansible_user: youkan
-          k3s_hostname: rancher-server
+          k3s_hostname: k3s-worker-1
           k3s_control_node: false
+        k3s-worker-2:
+          ansible_host: 192.168.0.24
+          ansible_user: youkan
+          k3s_hostname: k3s-worker-2
+          k3s_control_node: false
+      vars:
+        # ※ 以下のトークンは マスターから自動取得されます
+        # 手動でトークンを指定する場合は以下をコメント解除して値を入力してください
+        # k3s_token: "K10ca8d..." # マスターからの node-token
+
+    adguard_home:
+      hosts:
+        adguard-home:
+          ansible_host: 192.168.0.30
+          ansible_user: root
 
   vars:
     # Python interpreter

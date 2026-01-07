@@ -2,48 +2,55 @@
 # VM/LXC コンテナ定義
 # ==========================================
 # このファイルでProxmox上のVM/LXCコンテナを管理します
-# monakaにテンプレートを手動で作っておく
-# テンプレート VM（VMID 9000）に youkan ユーザーを事前作成済み
+# 各ノードにテンプレートを手動で作成済み:
+#   - mochi:  VMID 9000
+#   - aduki:  VMID 9001
+#   - anko:   VMID 9002
+#   - monaka: VMID 9003
+# テンプレート VM に youkan ユーザーを事前作成済み
 
 # ==========================================
-# 共通設定
-# ========================================== 
-
+# K3s クラスタ VM (Control Plane)
 # ==========================================
-# K3s クラスタ VM (HA etcd/Control Plane/Worker)
-# ==========================================
+# for_each を使用して共通設定を再利用
+# HA構成: etcd, Control Plane, Worker 機能
 
-# K3s Server 1 (aduki node)
-resource "proxmox_virtual_environment_vm" "k3s_server_1" {
-  name        = "k3s-server-1"
-  description = "K3s Server 1 (etcd, Control Plane, Worker - HA)"
-  node_name   = "aduki"
-  vm_id       = 201
+resource "proxmox_virtual_environment_vm" "k3s_server" {
+  for_each = var.k3s_servers
+
+  name        = each.value.name
+  description = "${each.value.name} (etcd, Control Plane, Worker - HA)"
+  node_name   = each.value.node_name
+  vm_id       = each.value.vm_id
   migrate     = true
 
   clone {
-    vm_id     = 9000
-    full      = true
-    node_name = "monaka"
+    vm_id     = each.value.clone_template
+    full      = false
+    node_name = each.value.clone_node
   }
 
+  # Graceful shutdown をサポート（destroy時にqemu-guest-agentでシャットダウン）
   agent {
     enabled = true
   }
 
+  # destroy時にVMを停止させる（graceful shutdown を試みる）
+  stop_on_destroy = true
+
   cpu {
-    cores   = 2
-    sockets = 1
+    cores   = var.k3s_server_defaults.cpu_cores
+    sockets = var.k3s_server_defaults.cpu_sockets
   }
 
   memory {
-    dedicated = 6144
+    dedicated = var.k3s_server_defaults.memory_mb
   }
 
   disk {
     interface    = "scsi0"
-    datastore_id = "local-lvm"
-    size         = 32
+    datastore_id = var.k3s_server_defaults.datastore_id
+    size         = var.k3s_server_defaults.disk_size
   }
 
   network_device {
@@ -51,57 +58,71 @@ resource "proxmox_virtual_environment_vm" "k3s_server_1" {
   }
 
   initialization {
-    datastore_id = "local-lvm"
+    datastore_id = var.k3s_server_defaults.datastore_id
     dns {
-      servers = ["8.8.8.8", "8.8.4.4"]
+      servers = var.k3s_server_defaults.dns_servers
     }
     ip_config {
       ipv4 {
-        address = "192.168.0.20/24"
-        gateway = "192.168.0.1"
+        address = "${each.value.ip_address}/24"
+        gateway = var.k3s_server_defaults.gateway
       }
     }
     user_account {
-      username = "youkan"
+      username = var.k3s_server_defaults.username
       password = var.ubuntu_password
       keys     = [var.ssh_public_key]
     }
   }
 
   tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
+  
+  # destroy時はVMをシャットダウン→60秒待機→強制停止
+  lifecycle {
+    ignore_changes = []
+  }
 }
 
-# K3s Server 2 (anko node)
-resource "proxmox_virtual_environment_vm" "k3s_server_2" {
-  name        = "k3s-server-2"
-  description = "K3s Server 2 (etcd, Control Plane, Worker - HA)"
-  node_name   = "anko"
-  vm_id       = 202
+# ==========================================
+# K3s Worker Nodes (Minecraft用高スペック)
+# ==========================================
+
+resource "proxmox_virtual_environment_vm" "k3s_worker" {
+  for_each = var.k3s_workers
+
+  name        = each.value.name
+  description = "${each.value.name} (Worker - Minecraft用)"
+  node_name   = each.value.node_name
+  vm_id       = each.value.vm_id
   migrate     = true
 
   clone {
-    vm_id     = 9000
-    full      = true
-    node_name = "monaka"
+    vm_id     = each.value.clone_template
+    full      = false
+    node_name = each.value.clone_node
   }
 
+  # Graceful shutdown をサポート（destroy時にqemu-guest-agentでシャットダウン）
   agent {
     enabled = true
   }
 
+  # destroy時にVMを停止させる（graceful shutdown を試みる）
+  stop_on_destroy = true
+
   cpu {
-    cores   = 2
-    sockets = 1
+    cores   = var.k3s_worker_defaults.cpu_cores
+    sockets = var.k3s_worker_defaults.cpu_sockets
   }
 
   memory {
-    dedicated = 6144
+    dedicated = var.k3s_worker_defaults.memory_mb
   }
 
   disk {
     interface    = "scsi0"
-    datastore_id = "local-lvm"
-    size         = 32
+    datastore_id = var.k3s_worker_defaults.datastore_id
+    size         = var.k3s_worker_defaults.disk_size
   }
 
   network_device {
@@ -109,178 +130,80 @@ resource "proxmox_virtual_environment_vm" "k3s_server_2" {
   }
 
   initialization {
-    datastore_id = "local-lvm"
+    datastore_id = var.k3s_worker_defaults.datastore_id
     dns {
-      servers = ["8.8.8.8", "8.8.4.4"]
+      servers = var.k3s_worker_defaults.dns_servers
     }
     ip_config {
       ipv4 {
-        address = "192.168.0.21/24"
-        gateway = "192.168.0.1"
+        address = "${each.value.ip_address}/24"
+        gateway = var.k3s_worker_defaults.gateway
       }
     }
     user_account {
-      username = "youkan"
+      username = var.k3s_worker_defaults.username
       password = var.ubuntu_password
       keys     = [var.ssh_public_key]
     }
   }
 
-  tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
-}
-
-# K3s Server 3 (monaka node)
-resource "proxmox_virtual_environment_vm" "k3s_server_3" {
-  name        = "k3s-server-3"
-  description = "K3s Server 3 (etcd, Control Plane, Worker - HA)"
-  node_name   = "monaka"
-  vm_id       = 203
-
-  clone {
-    vm_id     = 9000
-    full      = true
-    node_name = "monaka"
+  tags = ["k3s", "worker", "minecraft", "high-spec"]
+  
+  # destroy時はVMをシャットダウン→60秒待機→強制停止
+  lifecycle {
+    ignore_changes = []
   }
-
-  agent {
-    enabled = true
-  }
-
-  cpu {
-    cores   = 2
-    sockets = 1
-  }
-
-  memory {
-    dedicated = 6144
-  }
-
-  disk {
-    interface    = "scsi0"
-    datastore_id = "local-lvm"
-    size         = 32
-  }
-
-  network_device {
-    bridge = "vmbr0"
-  }
-
-  initialization {
-    datastore_id = "local-lvm"
-    dns {
-      servers = ["8.8.8.8", "8.8.4.4"]
-    }
-    ip_config {
-      ipv4 {
-        address = "192.168.0.22/24"
-        gateway = "192.168.0.1"
-      }
-    }
-    user_account {
-      username = "youkan"
-      password = var.ubuntu_password
-      keys     = [var.ssh_public_key]
-    }
-  }
-
-  tags = ["k3s", "server", "etcd", "control-plane", "worker", "ha"]
 }
 
 # ==========================================
-# Rancher Server VM
+# 注記: AdGuard Home LXC コンテナ
 # ==========================================
-
-resource "proxmox_virtual_environment_vm" "rancher_server" {
-  name        = "rancher-server"
-  description = "Rancher Server (K3s Cluster Management UI)"
-  node_name   = "monaka"
-  vm_id       = 210
-
-  clone {
-    vm_id     = 9000
-    full      = true
-    node_name = "monaka"
-  }
-
-  agent {
-    enabled = true
-  }
-
-  cpu {
-    cores   = 2
-    sockets = 1
-  }
-
-  memory {
-    dedicated = 6144
-  }
-
-  disk {
-    interface    = "scsi0"
-    datastore_id = "local-lvm"
-    size         = 32
-  }
-
-  network_device {
-    bridge = "vmbr0"
-  }
-
-  initialization {
-    datastore_id = "local-lvm"
-    dns {
-      servers = ["8.8.8.8", "8.8.4.4"]
-    }
-    ip_config {
-      ipv4 {
-        address = "192.168.0.30/24"
-        gateway = "192.168.0.1"
-      }
-    }
-    user_account {
-      username = "youkan"
-      password = var.ubuntu_password
-      keys     = [var.ssh_public_key]
-    }
-  }
-
-  tags = ["rancher", "management", "ui"]
-}
+# bpg/proxmox provider は VM（KVM）のみ対応のため、
+# LXC コンテナは Ansible で管理します
+#
+# 手動作成手順:
+#   1. Proxmox UI で AdGuard Home LXC を作成 (VMID: 301)
+#   2. IP: 192.168.0.30 を割り当て、ansibleの鍵を設定、ホスト名はadguard-home
+#   3. ansible-deploy.yml で playbook-adguard-home-install.yml を実行
 
 # ==========================================
 # Outputs
 # ==========================================
 
 output "k3s_servers" {
-  description = "K3s Server VMs information"
+  description = "K3s Server VMs information (Control Plane)"
   value = {
-    k3s_server_1 = {
-      name  = proxmox_virtual_environment_vm.k3s_server_1.name
-      vm_id = proxmox_virtual_environment_vm.k3s_server_1.vm_id
-      node  = proxmox_virtual_environment_vm.k3s_server_1.node_name
-      ip    = "192.168.0.20"
-    }
-    k3s_server_2 = {
-      name  = proxmox_virtual_environment_vm.k3s_server_2.name
-      vm_id = proxmox_virtual_environment_vm.k3s_server_2.vm_id
-      node  = proxmox_virtual_environment_vm.k3s_server_2.node_name
-      ip    = "192.168.0.21"
-    }
-    k3s_server_3 = {
-      name  = proxmox_virtual_environment_vm.k3s_server_3.name
-      vm_id = proxmox_virtual_environment_vm.k3s_server_3.vm_id
-      node  = proxmox_virtual_environment_vm.k3s_server_3.node_name
-      ip    = "192.168.0.22"
+    for key, vm in proxmox_virtual_environment_vm.k3s_server : key => {
+      name  = vm.name
+      vm_id = vm.vm_id
+      node  = vm.node_name
+      ip    = var.k3s_servers[key].ip_address
+      role  = "control-plane"
     }
   }
 }
 
-output "rancher_server" {
-  description = "Rancher Server VM information"
+output "k3s_workers" {
+  description = "K3s Worker VMs information (Minecraft用)"
   value = {
-    name  = proxmox_virtual_environment_vm.rancher_server.name
-    vm_id = proxmox_virtual_environment_vm.rancher_server.vm_id
-    node  = proxmox_virtual_environment_vm.rancher_server.node_name
-    ip    = "192.168.0.30"
+    for key, vm in proxmox_virtual_environment_vm.k3s_worker : key => {
+      name  = vm.name
+      vm_id = vm.vm_id
+      node  = vm.node_name
+      ip    = var.k3s_workers[key].ip_address
+      role  = "worker"
+      spec  = "CPU: ${var.k3s_worker_defaults.cpu_cores}コア, RAM: ${var.k3s_worker_defaults.memory_mb}MB"
+    }
   }
 }
 
+output "adguard_home" {
+  description = "AdGuard Home LXC Container (手動作成)"
+  value = {
+    vmid     = 301
+    node     = "aduki"
+    ip       = "192.168.0.30"
+    web_ui   = "http://192.168.0.30:3000"
+    note     = "Terraform では LXC 非対応のため Ansible で管理"
+  }
+}

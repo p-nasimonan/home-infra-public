@@ -1,46 +1,69 @@
 ---
 # ==========================================
-# xanmanning.k3s を使用した K3s クラスタセットアップ
+# K3s クラスタ統合セットアップ (完全版)
 # ==========================================
-# 用途:
-#   - K3s クラスタを Proxmox VM 上に自動デプロイ
-#   - embedded etcd による HA構成（3 ノード）
-#   - Rancher 管理サーバーを別途デプロイ可能
-#
-# 実行方法:
-#   ansible-playbook -i inventory.ini playbook-k3s-setup.yml -v
+# サーバーもワーカーもまとめて1つのPlayで実行することで、
+# Roleの自動連携機能(トークン共有など)を最大限に活用します。
 
-- name: K3s クラスタセットアップ
-  hosts: k3s_servers
+- name: K3s クラスタ構築 (Server & Worker)
+  hosts: k3s_servers,k3s_workers
+  become: yes
   tags:
     - setup
     - k3s
   vars:
-    # K3s リリース版（false で最新安定版を使用）
+    # ----------------------------------------
+    # 共通設定
+    # ----------------------------------------
+    kube_vip_address: "192.168.0.200"
+    kube_vip_interface: "eth0"
+    kube_vip_domain: "kube.youkan.uk"
+    kube_vip_version: "v0.8.0"
     k3s_release_version: false
-    # HA クラスタ用 embedded etcd 有効化
-    k3s_etcd_datastore: true
-    # K3s サーバー設定（制御プレーン）
+    
+    # ★重要: ワーカーはここ(VIP)に接続しに行きます
+    k3s_registration_address: "192.168.0.200"
+
+    # ----------------------------------------
+    # Role制御設定
+    # ----------------------------------------
+    # サーバーグループに属しているならコントロールノードにする
+    k3s_control_node: "{{ true if inventory_hostname in groups['k3s_servers'] else false }}"
+    
+    # HA構成のための設定
+    k3s_etcd_datastore: "{{ true if inventory_hostname in groups['k3s_servers'] else false }}"
+    
+    # ----------------------------------------
+    # Server用設定 (Workerでは無視されます)
+    # ----------------------------------------
     k3s_server:
-      # Flannel バックエンド設定
       flannel-backend: vxlan
-      # API サーバー監査ログ設定
       audit-log-maxage: 30
       audit-log-maxbackup: 10
       audit-log-maxsize: 100
-    # K3s エージェント設定（ワーカー）
+      tls-san:
+        - "{{ kube_vip_address }}"
+        - "{{ kube_vip_domain }}"
+      disable: servicelb
+
+    # ----------------------------------------
+    # Agent用設定 (全ノードに適用)
+    # ----------------------------------------
     k3s_agent:
-      # ノードラベル
-      node-label:
-        - "node-role=worker"
-    # バリデーション処理をスキップ（必要に応じて）
+      node-label: >-
+        {{
+          ['node-role=worker', 'workload=minecraft']
+          if inventory_hostname in groups['k3s_workers']
+          else []
+        }}
+
     k3s_skip_validation: false
-    # Python 3 インタープリタパス
     ansible_python_interpreter: /usr/bin/python3
-  
+
+
   pre_tasks:
-    # Python がない場合はインストール
-    - name: Python がない場合はブートストラップ
+    # Python ブートストラップ
+    - name: Python3 をブートストラップ
       raw: |
         if command -v python3 >/dev/null 2>&1; then
           exit 0
@@ -49,16 +72,17 @@
         sudo apt-get install -y python3 python3-apt python3-pip
       changed_when: false
 
-    # APT キャッシュ更新とパッケージ更新
-    - name: APT キャッシュ更新とディストリビューション更新
+    # パッケージ更新
+    - name: パッケージをアップデート
       apt:
         update_cache: yes
+        cache_valid_time: 3600
         upgrade: dist
         autoremove: yes
         autoclean: yes
       become: yes
 
-    # 必要なパッケージをインストール
+    # 必要パッケージをインストール
     - name: 必要なパッケージをインストール
       apt:
         name:
@@ -69,17 +93,18 @@
           - htop
           - net-tools
           - ntp
+          - python3-venv
         state: present
       become: yes
 
-    # タイムゾーンを Asia/Tokyo に設定
+    # タイムゾーン設定
     - name: タイムゾーンを Asia/Tokyo に設定
       timezone:
         name: Asia/Tokyo
       become: yes
 
-    # IP フォワーディング有効化
-    - name: IP フォワーディング有効化
+    # IP フォワーディング
+    - name: IP フォワーディングを有効化
       sysctl:
         name: net.ipv4.ip_forward
         value: "1"
@@ -87,7 +112,7 @@
         state: present
       become: yes
 
-    # ブリッジ iptables サポート用カーネルモジュールロード
+    # br_netfilter モジュール
     - name: br_netfilter モジュールをロード
       modprobe:
         name: br_netfilter
@@ -95,8 +120,8 @@
       become: yes
       ignore_errors: yes
 
-    # ブリッジネットワーク設定有効化
-    - name: ブリッジネットワーク設定有効化
+    # ブリッジネットワーク設定
+    - name: ブリッジネットワーク iptables サポートを有効化
       sysctl:
         name: net.bridge.bridge-nf-call-iptables
         value: "1"
@@ -105,26 +130,51 @@
       become: yes
       ignore_errors: yes
 
-    # /etc/hosts に Rancher ドメイン設定（LAN アクセス用）
-    - name: /etc/hosts に rancher.youkan.uk を追加
+    # /etc/hosts に K3s ドメイン追加
+    - name: /etc/hosts に K3s 関連ドメインを追加
       lineinfile:
         path: /etc/hosts
-        line: "192.168.0.30 rancher.youkan.uk"
+        line: "{{ item }}"
         state: present
       become: yes
+      loop:
+        - "192.168.0.20 k3s-server-1"
+        - "192.168.0.21 k3s-server-2"
+        - "192.168.0.22 k3s-server-3"
+        - "{{ kube_vip_address }} {{ kube_vip_domain }}"
 
-    # k3s-server-1 を制御ノードに設定
-    - name: k3s-server-1 を制御ノードに設定
-      set_fact:
-        k3s_control_node: true
-      when: inventory_hostname == "k3s-server-1"
+    # ===================================================================
+    # K3sインストール前にkube-vipマニフェストを配置（Serverのみ）
+    # K3s が /var/lib/rancher/k3s/server/manifests/ を監視して自動適用
+    # 外部ファイル (manifests/kube-vip.yaml) からテンプレート処理して展開
+    # ===================================================================
+    - name: kube-vip マニフェスト用ディレクトリを作成
+      file:
+        path: /var/lib/rancher/k3s/server/manifests
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      become: yes
+      when: inventory_hostname in groups['k3s_servers']
+
+    - name: kube-vip マニフェストを配置
+      template:
+        src: manifests/kube-vip.yaml
+        dest: /var/lib/rancher/k3s/server/manifests/kube-vip.yaml
+        owner: root
+        group: root
+        mode: '0600'
+      become: yes
+      when: inventory_hostname in groups['k3s_servers']
 
   roles:
     - role: xanmanning.k3s
       become: yes
 
   post_tasks:
-    # K3s が起動完了するまで待機
+
+    # K3s 起動確認（Server-1のみ）
     - name: K3s が起動完了するまで待機
       shell: |
         k3s kubectl get nodes
@@ -132,211 +182,202 @@
       until: k3s_nodes_ready.rc == 0 and k3s_nodes_ready.stdout_lines | length > 0
       retries: 30
       delay: 10
+      when: inventory_hostname == "k3s-server-1"
 
-      when: k3s_control_node is defined and k3s_control_node
-
-    # 制御ノードから kubeconfig を取得
-    - name: 制御ノードから kubeconfig を取得
+    # kubeconfig 取得（Server-1のみ）
+    - name: kubeconfig を取得
       fetch:
         src: /etc/rancher/k3s/k3s.yaml
         dest: ./kubeconfig.yaml
         flat: yes
       become: yes
-
       when: inventory_hostname == "k3s-server-1"
 
-- name: Rancher サーバーセットアップ
-  hosts: rancher_servers
-  tags:
-    - setup
-    - rancher
-  vars:
-    # K3s リリース版（false で最新安定版を使用）
-    k3s_release_version: false
-    # 単一ノードクラスタ（クラスタリング無効）
-    k3s_build_cluster: false
-    # K3s サーバー設定
-    k3s_server:
-    # Python 3 インタープリタパス
-    ansible_python_interpreter: /usr/bin/python3
-  
-  pre_tasks:
-    # Python がない場合はインストール
-    - name: Python がない場合はブートストラップ
-      raw: |
-        if command -v python3 >/dev/null 2>&1; then
-          exit 0
-        fi
-        sudo apt-get update -y
-        sudo apt-get install -y python3 python3-apt python3-pip
-      changed_when: false
-
-    # APT キャッシュ更新とパッケージ更新
-    - name: APT キャッシュ更新とディストリビューション更新
-      apt:
-        update_cache: yes
-        upgrade: dist
-        autoremove: yes
-        autoclean: yes
-      become: yes
-
-    # 必要なパッケージをインストール（Docker 含む）
-    - name: 必要なパッケージをインストール
-      apt:
-        name:
-          - curl
-          - wget
-          - git
-          - vim
-          - htop
-          - net-tools
-          - ntp
-          - containerd
-        state: present
-      become: yes
-
-    # タイムゾーンを Asia/Tokyo に設定
-    - name: タイムゾーンを Asia/Tokyo に設定
-      timezone:
-        name: Asia/Tokyo
-      become: yes
-
-    # IP フォワーディング有効化
-    - name: IP フォワーディング有効化
-      sysctl:
-        name: net.ipv4.ip_forward
-        value: "1"
-        sysctl_set: yes
-        state: present
-      become: yes
-
-    # ブリッジ iptables サポート用カーネルモジュールロード
-    - name: br_netfilter モジュールをロード
-      modprobe:
-        name: br_netfilter
-        state: present
-      become: yes
-      ignore_errors: yes
-
-    # ブリッジネットワーク設定有効化
-    - name: ブリッジネットワーク設定有効化
-      sysctl:
-        name: net.bridge.bridge-nf-call-iptables
-        value: "1"
-        sysctl_set: yes
-        state: present
-      become: yes
-      ignore_errors: yes
-
-    # /etc/hosts に Rancher ドメイン設定（LAN アクセス用）
-    - name: /etc/hosts に rancher.youkan.uk を追加
-      lineinfile:
-        path: /etc/hosts
-        line: "127.0.0.1 rancher.youkan.uk"
-        state: present
-      become: yes
-
-    # Rancher を制御ノードに設定
-    - name: Rancher を制御ノードに設定
-      set_fact:
-        k3s_control_node: true
-
-  roles:
-    - role: xanmanning.k3s
-      become: yes
-
-  post_tasks:
-    # K3s が起動完了するまで待機
-    - name: K3s が起動完了するまで待機
+    # ===================================================================
+    # kube-vip Cloud Controller のインストール（Server-1のみ）
+    # Service type LoadBalancer を kube-vip で制御するために必要
+    # ===================================================================
+    - name: kube-vip Cloud Controller をインストール
       shell: |
-        k3s kubectl get nodes
-      register: k3s_rancher_ready
-      until: k3s_rancher_ready.rc == 0
-      retries: 30
-      delay: 10
+        kubectl apply -f https://raw.githubusercontent.com/kube-vip/kube-vip-cloud-provider/main/manifest/kube-vip-cloud-controller.yaml
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      become: yes
+      when: inventory_hostname == "k3s-server-1"
+      ignore_errors: yes
+
+    - name: kube-vip IP レンジを ConfigMap で設定
+      shell: |
+        kubectl get configmap kubevip -n kube-system >/dev/null 2>&1 && \
+        kubectl patch configmap kubevip -n kube-system -p '{"data":{"range-global": "192.168.0.210-192.168.0.219"}}' || \
+        kubectl create configmap kubevip -n kube-system --from-literal range-global=192.168.0.210-192.168.0.219
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      become: yes
+      when: inventory_hostname == "k3s-server-1"
+      register: kubevip_configmap
+      changed_when: "'created' in kubevip_configmap.stdout or 'patched' in kubevip_configmap.stdout"
+      ignore_errors: yes
+
+    # ================================================
+    # デバッグ出力（Role実行後の設定確認）
+    # ================================================
+    - name: K3s ノード設定を確認
+      debug:
+        msg: |
+          ========================================
+          K3s ノード設定確認
+          ========================================
+          ホスト: {{ inventory_hostname }}
+          ノードタイプ: {{ 'Server (Control Plane)' if inventory_hostname in groups['k3s_servers'] else 'Worker' }}
+          接続先VIP: {{ kube_vip_address if inventory_hostname in groups['k3s_workers'] else 'N/A (Server)' }}
+          k3s_control_node: {{ k3s_control_node }}
+          k3s_etcd_datastore: {{ k3s_etcd_datastore }}
+          ========================================
+
+    # config.yaml の確認
+    - name: config.yaml の内容を表示
+      slurp:
+        src: /etc/rancher/k3s/config.yaml
+      register: k3s_config_raw
+      become: yes
+      ignore_errors: yes
+
+    - name: 生成された K3s 設定を表示
+      debug:
+        msg: |
+          ========================================
+          生成された config.yaml の内容
+          ========================================
+          {{ k3s_config_raw.content | b64decode }}
+          ========================================
+      when: k3s_config_raw is not skipped
+
+    # サービスの起動確認
+    - name: K3s サービス状態を確認
+      shell: |
+        {% if inventory_hostname in groups['k3s_servers'] %}
+        systemctl status k3s
+        {% else %}
+        systemctl status k3s-agent
+        {% endif %}
+      register: k3s_service_status
+      changed_when: false
+      become: yes
+      ignore_errors: yes
+
+    - name: サービス状態を表示
+      debug:
+        msg: |
+          ========================================
+          K3s サービス状態（{{ inventory_hostname }}）
+          ========================================
+          {{ k3s_service_status.stdout_lines[0:3] | join('\n') }}
+          ========================================
+      when: k3s_service_status.rc == 0
+
 
 # ==========================================
-# Rancher のインストール (Helm を使用)
+# ノード数確認（全ノード参加を検証）
 # ==========================================
-# プライベートIPのみでアクセス
-# 外部は Cloudflare Tunnel 経由
-# ==========================================
-- name: Deploy Rancher on k3s
-  hosts: rancher_servers
+- name: K3s クラスタ ノード確認
+  hosts: k3s_servers[0]
+  gather_facts: no
   tags:
     - setup
+    - k3s
+
+  tasks:
+    - name: K3s ノード一覧を取得
+      shell: |
+        /usr/local/bin/kubectl get nodes -o jsonpath='{.items[*].metadata.name}'
+      register: k3s_nodes_list
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      become: yes
+
+    - name: ノード数をカウント
+      set_fact:
+        k3s_nodes_count: "{{ k3s_nodes_list.stdout.split() | length }}"
+        k3s_nodes_names: "{{ k3s_nodes_list.stdout.split() }}"
+
+    - name: 期待されるノード数
+      set_fact:
+        expected_nodes_count: 5  # 3つのControl Plane + 2つのWorker
+        expected_nodes:
+          - k3s-server-1
+          - k3s-server-2
+          - k3s-server-3
+          - k3s-worker-1
+          - k3s-worker-2
+
+    - name: ノード数の検証
+      assert:
+        that:
+          - k3s_nodes_count | int >= 3  # 最低限サーバーが起動していることを確認
+        fail_msg: |
+          ❌ K3s クラスタが起動していません
+          期待: 最低 3 個以上のノード
+          実際: {{ k3s_nodes_count }}個のノード
+        success_msg: |
+          ✅ K3s クラスタが起動しています
+          現在のノード数: {{ k3s_nodes_count }}個
+          ノード一覧: {{ k3s_nodes_names | join(', ') }}
+
+    - name: ノードの詳細情報を表示
+      shell: |
+        /usr/local/bin/kubectl get nodes -o wide
+      register: k3s_nodes_detail
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      become: yes
+
+    - name: ノード詳細を出力
+      debug:
+        msg: |
+          {{ k3s_nodes_detail.stdout }}
+
+
+# ==========================================
+# Rancher のインストール (Helm)
+# ==========================================
+- name: Rancher をデプロイ
+  hosts: k3s_servers[0]
+  tags:
     - rancher
   become: yes
   vars:
-    # ドメイン設定（プライベートアクセス用）
-    # 外部アクセスは Cloudflare Tunnel 経由で rancher.youkan.uk → これに転送
     rancher_domain: "rancher.youkan.uk"
-
-    # Rancher のバージョン (stable 推奨)
-    rancher_version: "v2.12.1"
-
-    # cert-manager のバージョン
+    rancher_version: "v2.13.1"
     cert_manager_version: "v1.15.3"
+    rancher_bootstrap_password: "{{ lookup('env', 'RANCHER_PASSWORD') }}"
+    ansible_python_interpreter: /usr/bin/python3
 
-    # Rancher ブートストラップパスワード（GitHub Actions Secret から）
-    rancher_bootstrap_password: "{{ rancher_password }}"
-
-  # k3s の管理者権限で実行するための環境変数
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
 
   tasks:
-    # Python 3 インタープリタ設定
-    - name: Python3 インタープリタ設定の確認
-      set_fact:
-        ansible_python_interpreter: /usr/bin/python3
-
-    # -----------------------------------------------
-    # 0. Python/pip をインストール（必須）
-    # -----------------------------------------------
-    - name: Python3 と pip3 をインストール
-      apt:
-        name:
-          - python3
-          - python3-pip
-          - python3-venv
-        state: present
-        update_cache: yes
-      become: yes
-
-    # -----------------------------------------------
-    # 1. 下準備: 必要なツール・ライブラリのインストール
-    # -----------------------------------------------
-    # Ubuntu 23.04+ PEP 668 対策：仮想環境を使用
+    # Python 仮想環境セットアップ
     - name: Python 仮想環境を作成
       shell: |
         python3 -m venv /opt/ansible-venv
       args:
         executable: /bin/bash
-      become: yes
       changed_when: false
 
-    - name: 仮想環境に pip をアップグレード
+    - name: 仮想環境に必要なパッケージをインストール
       shell: |
         /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
+        /opt/ansible-venv/bin/pip install kubernetes>=21.0.0 pyyaml>=5.4.1
       args:
         executable: /bin/bash
-      become: yes
-
-    - name: 仮想環境に Ansible 用パッケージをインストール
-      shell: |
-        /opt/ansible-venv/bin/pip install \
-          kubernetes>=21.0.0 \
-          pyyaml>=5.4.1
-      args:
-        executable: /bin/bash
-      become: yes
 
     - name: Python インタープリタを仮想環境に設定
       set_fact:
         ansible_python_interpreter: /opt/ansible-venv/bin/python3
 
-    - name: Helm インストール (未インストール時)
+    # Helm インストール
+    - name: Helm をインストール
       shell: |
         if ! command -v helm >/dev/null 2>&1; then
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -345,28 +386,18 @@
         executable: /bin/bash
       changed_when: false
 
-    - name: Helm バージョン確認
-      shell: helm version --short
-      register: helm_version
-      changed_when: false
-
-    - name: Helm version 情報を表示
-      debug:
-        msg: "{{ helm_version.stdout }}"
-
-    # -----------------------------------------------
-    # 2. Cert-Manager のインストール (Rancher 必須要件)
-    # -----------------------------------------------
+    # Cert-Manager インストール
     - name: Jetstack Helm リポジトリを追加
       kubernetes.core.helm_repository:
         name: jetstack
         repo_url: "https://charts.jetstack.io"
         kubeconfig: /etc/rancher/k3s/k3s.yaml
 
-    - name: Helm リポジトリ更新
+    - name: Helm リポジトリを更新
       shell: helm repo update
       args:
         executable: /bin/bash
+      changed_when: false
 
     - name: cert-manager をインストール
       kubernetes.core.helm:
@@ -381,6 +412,7 @@
         wait: yes
         wait_timeout: 10m
 
+    # Cert-manager 起動確認
     - name: Cert-manager が起動するまで待機
       shell: |
         kubectl get deployment -n cert-manager cert-manager -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0
@@ -391,16 +423,14 @@
       retries: 30
       delay: 10
 
-    # -----------------------------------------------
-    # 3. Rancher 本体のインストール
-    # -----------------------------------------------
+    # Rancher インストール
     - name: Rancher Helm リポジトリを追加
       kubernetes.core.helm_repository:
         name: rancher-latest
         repo_url: "https://releases.rancher.com/server-charts/latest"
         kubeconfig: /etc/rancher/k3s/k3s.yaml
 
-    - name: Rancher Server をインストール
+    - name: Rancher をインストール
       kubernetes.core.helm:
         name: rancher
         chart_ref: rancher-latest/rancher
@@ -408,8 +438,6 @@
         create_namespace: yes
         chart_version: "{{ rancher_version }}"
         values:
-          # Ingress hostname: プライベートアクセス用ドメイン
-          # 外部アクセスは Cloudflare Tunnel 経由
           hostname: "{{ rancher_domain }}"
           replicas: 1
           bootstrapPassword: "{{ rancher_bootstrap_password }}"
@@ -423,10 +451,8 @@
         wait: yes
         wait_timeout: 15m
 
-    # -----------------------------------------------
-    # 4. Rancher 起動確認
-    # -----------------------------------------------
-    - name: Rancher deployment が起動するまで待機
+    # Rancher 起動確認
+    - name: Rancher が起動するまで待機
       shell: |
         kubectl get deployment -n cattle-system rancher -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0
       environment:
@@ -436,8 +462,6 @@
       retries: 30
       delay: 10
 
-# ==========================================
-# 次のステップ: ArgoCD をインストール
-# ==========================================
-# kubernetes/argocd-bootstrap.yml で ArgoCD をセットアップ
-# 以後は Git commit でアプリケーション自動デプロイ
+    - name: Rancher セットアップ完了
+      debug:
+        msg: "✓ Rancher は https://{{ rancher_domain }} でアクセス可能です"

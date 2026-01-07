@@ -1,0 +1,198 @@
+name: Ansible Deploy
+
+# ==========================================
+# トリガー
+# ==========================================
+on:
+  # 手動トリガーのみ
+  workflow_dispatch:
+    inputs:
+      playbook:
+        description: '実行するプレイブック'
+        required: true
+        type: choice
+        options:
+          - playbook-k3s-setup.yml
+          - playbook-k3s-uninstall.yml
+          - playbook-adguard-home-install.yml
+          - playbook-argocd-install.yml
+          - playbook-argocd-upgrade.yml
+          - playbook-check-kubevip.yml
+      tags:
+        description: '実行するタグ (カンマ区切り、空白でスキップ)'
+        required: false
+        type: string
+        default: ''
+
+# 実行時に選択したプレイブック名を表示
+run-name: "Ansible Deploy - ${{ github.event.inputs.playbook }} tag:${{ github.event.inputs.tags }}"
+
+jobs:
+  # =========================================
+  # 共通セットアップジョブ
+  # =========================================
+  setup:
+    name: Setup Environment
+    runs-on: [self-hosted, Linux, X64]
+    outputs:
+      playbook_name: ${{ steps.set-vars.outputs.playbook_name }}
+      hosts: ${{ steps.set-vars.outputs.hosts }}
+      timeout: ${{ steps.set-vars.outputs.timeout }}
+    steps:
+      - name: プレイブック変数を設定
+        id: set-vars
+        run: |
+          case "${{ github.event.inputs.playbook }}" in
+            playbook-k3s-setup.yml)
+              echo "playbook_name=Deploy - K3s & Rancher" >> $GITHUB_OUTPUT
+              echo "hosts=k3s_servers k3s_workers" >> $GITHUB_OUTPUT
+              echo "timeout=180" >> $GITHUB_OUTPUT
+              ;;
+            playbook-k3s-uninstall.yml)
+              echo "playbook_name=Uninstall - K3s Cluster" >> $GITHUB_OUTPUT
+              echo "hosts=k3s_servers k3s_workers" >> $GITHUB_OUTPUT
+              echo "timeout=60" >> $GITHUB_OUTPUT
+              ;;
+            playbook-adguard-home-install.yml)
+              echo "playbook_name=Deploy - AdGuard Home" >> $GITHUB_OUTPUT
+              echo "hosts=adguard_home" >> $GITHUB_OUTPUT
+              echo "timeout=30" >> $GITHUB_OUTPUT
+              ;;
+            playbook-argocd-install.yml)
+              echo "playbook_name=Deploy - ArgoCD" >> $GITHUB_OUTPUT
+              echo "hosts=k3s_servers" >> $GITHUB_OUTPUT
+              echo "timeout=60" >> $GITHUB_OUTPUT
+              ;;
+            playbook-argocd-upgrade.yml)
+              echo "playbook_name=Upgrade - ArgoCD (既存データ保持)" >> $GITHUB_OUTPUT
+              echo "hosts=k3s_servers" >> $GITHUB_OUTPUT
+              echo "timeout=60" >> $GITHUB_OUTPUT
+              ;;
+            playbook-check-kubevip.yml)
+              echo "playbook_name=Check - kube-vip VIP Status" >> $GITHUB_OUTPUT
+              echo "hosts=k3s_servers" >> $GITHUB_OUTPUT
+              echo "timeout=15" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+  # =========================================
+  # Ansible 実行ジョブ
+  # =========================================
+  deploy:
+    name: ${{ needs.setup.outputs.playbook_name }}
+    needs: setup
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: ${{ fromJson(needs.setup.outputs.timeout) }}
+
+    env:
+      ANSIBLE_WORK_DIR: ./ansible
+      PLAYBOOK_FILE: ${{ github.event.inputs.playbook }}
+
+    defaults:
+      run:
+        working-directory: ${{ env.ANSIBLE_WORK_DIR }}
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: '**/requirements.txt'
+
+      - name: Python 依存パッケージをインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ansible ロールをインストール
+        if: ${{ github.event.inputs.playbook == 'playbook-k3s-setup.yml' || github.event.inputs.playbook == 'playbook-k3s-uninstall.yml' }}
+        run: |
+          mkdir -p roles
+          ansible-galaxy install -r requirements.yml -p roles -f
+
+      - name: SSH キーをセットアップ
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 192.168.0.20 192.168.0.21 192.168.0.22 192.168.0.23 192.168.0.24 192.168.0.30 >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: SSH 接続テスト
+        run: |
+          ansible all -i inventory.yml -m ping
+
+      - name: Ansible 構文チェック
+        run: |
+          ansible-playbook -i inventory.yml "${{ env.PLAYBOOK_FILE }}" --syntax-check
+
+      - name: Ansible プレイブック実行
+        env:
+          RANCHER_PASSWORD: ${{ secrets.RANCHER_PASSWORD }}
+          ARGOCD_GITHUB_CLIENT_ID: ${{ secrets.ARGOCD_GITHUB_CLIENT_ID }}
+          ARGOCD_GITHUB_CLIENT_SECRET: ${{ secrets.ARGOCD_GITHUB_CLIENT_SECRET }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+        run: |
+          # ArgoCD用の追加引数を設定
+          EXTRA_ARGS=""
+          if [[ "${{ env.PLAYBOOK_FILE }}" == "playbook-argocd-install.yml" ]]; then
+            EXTRA_ARGS="-e github_client_id=${ARGOCD_GITHUB_CLIENT_ID} -e github_client_secret=${ARGOCD_GITHUB_CLIENT_SECRET} -e github_admin_username=${{ github.actor }}"
+          fi
+          
+          # タグが指定されている場合は追加
+          if [[ -n "${{ github.event.inputs.tags }}" ]]; then
+            EXTRA_ARGS="${EXTRA_ARGS} --tags ${{ github.event.inputs.tags }}"
+          fi
+          
+          ansible-playbook -i inventory.yml "${{ env.PLAYBOOK_FILE }}" -v ${EXTRA_ARGS}
+
+      - name: 実行完了メッセージ
+        if: success()
+        run: |
+          PLAYBOOK="${{ env.PLAYBOOK_FILE }}"
+          case "$PLAYBOOK" in
+            playbook-k3s-setup.yml)
+              echo "✅ K3s & Rancher デプロイが完了しました"
+              echo "📍 API: https://192.168.0.200:6443"
+              echo "📍 Web UI: https://rancher.youkan.uk"
+              ;;
+            playbook-k3s-uninstall.yml)
+              echo "✅ K3s クラスタをアンインストールしました"
+              echo "⚠️  すべてのデータが削除されました"
+              ;;
+            playbook-adguard-home-install.yml)
+              echo "✅ AdGuard Home インストール完了"
+              echo "📍 URL: http://192.168.0.30:3000"
+              echo "📍 DNS Server: 192.168.0.30:53"
+              ;;
+            playbook-argocd-install.yml)
+              echo "✅ ArgoCD インストール完了"
+              echo "📍 URL: https://argocd.youkan.uk"
+              echo "📍 GitHub SSO: 有効"
+              ;;
+            playbook-argocd-upgrade.yml)
+              echo "✅ ArgoCD アップグレード完了"
+              echo "📍 URL: https://argocd.youkan.uk"
+              echo "⚠️  既存アプリケーションは保持されています"
+              ;;
+            playbook-check-kubevip.yml)
+              echo "✅ kube-vip VIP ステータス確認完了"
+              echo "📍 VIP: 192.168.0.200"
+              ;;
+          esac
+          
+          # Cloudflare Tunnel が含まれている場合
+          if grep -q "cloudflare" "${{ env.PLAYBOOK_FILE }}"; then
+            echo ""
+            echo "📍 Cloudflare Tunnel: https://one.dash.cloudflare.com"
+          fi
+
+      - name: エラーログ表示
+        if: failure()
+        run: |
+          echo "❌ プレイブック実行に失敗しました"
+          echo "詳細はログを確認してください"
+

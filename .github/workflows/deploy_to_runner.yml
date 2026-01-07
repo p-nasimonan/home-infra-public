@@ -1,4 +1,5 @@
 name: Deploy Terraform on infra-runner
+run-name: Deploy Terraform (${{ github.event.inputs.terraform_action || 'plan' }}) on infra-runner
 
 on:
   push:
@@ -21,7 +22,7 @@ on:
 
 jobs:
   terraform:
-    name: Terraform on self-hosted runner
+    name: Terraform (${{ github.event.inputs.terraform_action || 'plan' }}) on self-hosted runner
     runs-on: [self-hosted, Linux, X64]
     
     defaults:

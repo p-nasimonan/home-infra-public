@@ -1,0 +1,239 @@
+---
+# ==========================================
+# ArgoCD のアップグレード（既存データ保持）
+# ==========================================
+# 既存の ArgoCD アプリケーションやリソースを保持したまま
+# 設定の更新やバージョンアップを実行します
+#
+# 実行方法:
+#   ansible-playbook -i inventory.yml playbook-argocd-upgrade.yml
+
+- name: Upgrade ArgoCD on K3s Cluster
+  hosts: k3s_servers[0]
+  tags:
+    - argocd
+    - upgrade
+  become: yes
+  vars:
+    argocd_domain: "argocd.youkan.uk"
+    argocd_namespace: "argocd"
+    argocd_chart_version: "9.1.3"
+    ansible_python_interpreter: /usr/bin/python3
+    github_client_id: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_ID') }}"
+    github_client_secret: "{{ lookup('env', 'ARGOCD_GITHUB_CLIENT_SECRET') }}"
+    github_admin_username: "{{ lookup('env', 'ARGOCD_GITHUB_USERNAME') | default('') }}"
+
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+  tasks:
+    # kubeconfig を確認
+    - name: kubeconfig 存在確認
+      stat:
+        path: /etc/rancher/k3s/k3s.yaml
+      register: kubeconfig_stat
+      failed_when: not kubeconfig_stat.stat.exists
+
+    # Python 仮想環境セットアップ
+    - name: Python 仮想環境が存在するか確認
+      stat:
+        path: /opt/ansible-venv
+      register: venv_stat
+
+    - name: Python 仮想環境を作成（存在しない場合）
+      shell: |
+        python3 -m venv /opt/ansible-venv
+      args:
+        executable: /bin/bash
+      when: not venv_stat.stat.exists
+
+    - name: 仮想環境に必要なパッケージをインストール
+      shell: |
+        /opt/ansible-venv/bin/pip install --upgrade pip setuptools wheel
+        /opt/ansible-venv/bin/pip install kubernetes>=21.0.0 pyyaml>=5.4.1
+      args:
+        executable: /bin/bash
+
+    - name: Python インタープリタを仮想環境に設定
+      set_fact:
+        ansible_python_interpreter: /opt/ansible-venv/bin/python3
+
+    # Helm インストール
+    - name: Helm をインストール
+      shell: |
+        if ! command -v helm >/dev/null 2>&1; then
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    # ArgoCD 名前空間の存在確認
+    - name: ArgoCD 名前空間の存在を確認
+      shell: |
+        kubectl get namespace {{ argocd_namespace }}
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: namespace_check
+      failed_when: false
+      changed_when: false
+
+    - name: ArgoCD がインストールされていない場合は警告
+      fail:
+        msg: |
+          ❌ ArgoCD がインストールされていません。
+          まず playbook-argocd-install.yml を実行してください。
+      when: namespace_check.rc != 0
+
+    # 既存の Application リソースをバックアップ
+    - name: 既存の ArgoCD Application リソースを確認
+      shell: |
+        kubectl get applications -n {{ argocd_namespace }} -o name
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: argocd_apps
+      changed_when: false
+      ignore_errors: yes
+
+    - name: 既存アプリケーション一覧を表示
+      debug:
+        msg: |
+          === 既存の ArgoCD アプリケーション ===
+          {{ argocd_apps.stdout_lines | length }} 個のアプリケーションが存在します
+          {% if argocd_apps.stdout_lines | length > 0 %}
+          {{ argocd_apps.stdout }}
+          {% endif %}
+      when: argocd_apps.rc == 0
+
+    # ArgoCD Helm リポジトリ追加/更新
+    - name: ArgoCD Helm リポジトリを追加
+      kubernetes.core.helm_repository:
+        name: argo
+        repo_url: "https://argoproj.github.io/argo-helm"
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        insecure_skip_tls_verify: yes
+        validate_certs: no
+
+    # ArgoCD をアップグレード（既存データ保持）
+    - name: ArgoCD をアップグレード
+      kubernetes.core.helm:
+        name: argocd
+        chart_ref: argo/argo-cd
+        release_namespace: "{{ argocd_namespace }}"
+        chart_version: "{{ argocd_chart_version }}"
+        update_repo_cache: true
+        kubeconfig: /etc/rancher/k3s/k3s.yaml
+        insecure_skip_tls_verify: yes
+        validate_certs: no
+        wait: yes
+        wait_timeout: 10m
+        # ★重要：reset-values を使わずに既存値を保持
+        values:
+          global:
+            domain: "{{ argocd_domain }}"
+          
+          server:
+            extraArgs:
+            - --insecure
+            service:
+              port: 80
+              targetPort: 8080
+              type: ClusterIP
+              annotations:
+                traefik.ingress.kubernetes.io/service.serversscheme: http
+            ingress:
+              enabled: true
+              ingressClassName: traefik
+              hosts:
+                - "{{ argocd_domain }}"
+          
+          configs:
+            cm:
+              dex.config: |
+                connectors:
+                  - type: github
+                    id: github
+                    name: GitHub
+                    config:
+                      clientID: "{{ github_client_id }}"
+                      clientSecret: "{{ github_client_secret }}"
+                      redirectURL: https://{{ argocd_domain }}/api/dex/callback
+            
+            rbac:
+              policy.default: "role:admin"
+            
+            params:
+              application.instanceLabelKey: argocd.argoproj.io/instance
+          
+          redis:
+            enabled: true
+          
+          controller:
+            replicas: 1
+          
+          repoServer:
+            replicas: 1
+
+    # ArgoCD 起動確認
+    - name: ArgoCD が起動するまで待機
+      shell: |
+        kubectl get deployment -n {{ argocd_namespace }} argocd-server -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: argocd_replicas
+      until: argocd_replicas.stdout | int > 0
+      retries: 30
+      delay: 10
+
+    # アップグレード後の Application リソースを確認
+    - name: アップグレード後の ArgoCD Application リソースを確認
+      shell: |
+        kubectl get applications -n {{ argocd_namespace }} -o name
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: argocd_apps_after
+      changed_when: false
+      ignore_errors: yes
+
+    # セットアップ完了
+    - name: ArgoCD サービス情報を確認
+      shell: |
+        kubectl get svc -n {{ argocd_namespace }} argocd-server -o wide
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: argocd_svc_info
+      changed_when: false
+
+    - name: ArgoCD Ingress を確認
+      shell: |
+        kubectl get ingress -n {{ argocd_namespace }}
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      register: argocd_ingress_info
+      changed_when: false
+
+    - name: ArgoCD アップグレード完了
+      debug:
+        msg: |
+          ✓ ArgoCD アップグレード完了
+          
+          === アクセス方法 ===
+          - URL: https://{{ argocd_domain }}
+          - Traefik Ingress: 有効
+          - GitHub SSO: 有効
+          
+          === アップグレード情報 ===
+          Chart Version: {{ argocd_chart_version }}
+          
+          === 既存アプリケーション ===
+          アップグレード前: {{ argocd_apps.stdout_lines | length if argocd_apps.rc == 0 else 0 }} 個
+          アップグレード後: {{ argocd_apps_after.stdout_lines | length if argocd_apps_after.rc == 0 else 0 }} 個
+          {% if argocd_apps_after.rc == 0 and argocd_apps_after.stdout_lines | length > 0 %}
+          
+          保持されたアプリケーション:
+          {{ argocd_apps_after.stdout }}
+          {% endif %}
+          
+          === 確認コマンド ===
+          kubectl get applications -n {{ argocd_namespace }}
+          kubectl get pods -n {{ argocd_namespace }}
