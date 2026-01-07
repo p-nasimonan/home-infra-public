@@ -18,7 +18,7 @@ jobs:
         env:
           PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
-          git config --global user.email "p-nasimonan4@gmail.com"
+          git config --global user.email "p-nasimonan@gmail.com"
           git config --global user.name "p-nasimonan"
           git remote add public https://p-nasimonan:${PUBLIC_REPO_TOKEN}@github.com/p-nasimonan/home-infra-public
           git push public release:main --force
