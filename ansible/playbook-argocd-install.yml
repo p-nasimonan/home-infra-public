@@ -267,4 +267,3 @@
       when: inventory_hostname == "k3s-server-1"
 
 
-

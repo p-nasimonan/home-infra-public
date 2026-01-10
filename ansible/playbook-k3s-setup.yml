@@ -206,19 +206,6 @@
       when: inventory_hostname == "k3s-server-1"
       ignore_errors: yes
 
-    - name: kube-vip IP レンジを ConfigMap で設定
-      shell: |
-        kubectl get configmap kubevip -n kube-system >/dev/null 2>&1 && \
-        kubectl patch configmap kubevip -n kube-system -p '{"data":{"range-global": "192.168.0.210-192.168.0.219"}}' || \
-        kubectl create configmap kubevip -n kube-system --from-literal range-global=192.168.0.210-192.168.0.219
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      become: yes
-      when: inventory_hostname == "k3s-server-1"
-      register: kubevip_configmap
-      changed_when: "'created' in kubevip_configmap.stdout or 'patched' in kubevip_configmap.stdout"
-      ignore_errors: yes
-
     # ================================================
     # デバッグ出力（Role実行後の設定確認）
     # ================================================
